@@ -3,6 +3,9 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { verifyRecitation } from "@/lib/verifyRecitationLogic";
 import Speech from "@google-cloud/speech";
 
+/** 語音辨識回傳形狀，避免依賴 @google-cloud/speech 的型別命名空間 */
+type RecognizeResult = { results?: { alternatives?: { transcript?: string }[] }[] };
+
 type EncodingConfig =
   | { encoding: "WEBM_OPUS"; sampleRateHertz: number }
   | { encoding: "MP3" }
@@ -91,7 +94,6 @@ export async function POST(request: Request) {
 
     let audioConfig = detectAudioConfig(audioBuffer) ?? { encoding: "WEBM_OPUS" as const, sampleRateHertz: 48000 };
     const base64 = audioBuffer.toString("base64");
-    type RecognizeResult = { results?: { alternatives?: { transcript?: string }[] }[] };
     let response: RecognizeResult | null = null;
 
     const runRecognize = (cfg: typeof audioConfig) => {
