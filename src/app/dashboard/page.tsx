@@ -49,6 +49,7 @@ export default function DashboardPage() {
     transcript?: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recordingSavedToAudioRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -87,6 +88,9 @@ export default function DashboardPage() {
     try {
       setRecitedText("");
       setVerifyStatus("idle");
+      setAudioVerifyStatus("idle");
+      setAudioVerifyResult(null);
+      recordingSavedToAudioRef.current = false;
       recognitionRef.current = null;
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -98,6 +102,21 @@ export default function DashboardPage() {
       };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        const chunks = chunksRef.current;
+        if (chunks.length > 0 && user) {
+          recordingSavedToAudioRef.current = true;
+          const blob = new Blob(chunks, { type: "audio/webm" });
+          const path = `recordings/${user.uid}/${weekId}/rec-${Date.now()}.webm`;
+          const storageRef = ref(storage, path);
+          setAudioVerifyStatus("uploading");
+          uploadBytesResumable(storageRef, blob)
+            .then(() => getDownloadURL(storageRef))
+            .then((url) => {
+              setAudioVerifyStatus("checking");
+              return verifyFromAudioUrl(url);
+            })
+            .catch(() => setAudioVerifyStatus("idle"));
+        }
       };
       mr.start();
 
@@ -273,8 +292,12 @@ export default function DashboardPage() {
   const todayContent = verse
     ? getCumulativeContent(verse.segments, dayOfWeek)
     : "";
-  // 結束錄音後，若有辨識結果則自動驗證（不需手動貼文）
+  // 結束錄音後：若已改為「存入音檔＋音檔驗證」則不跑文字驗證；否則若有辨識結果則自動文字驗證
   useEffect(() => {
+    if (recordingSavedToAudioRef.current) {
+      recordingSavedToAudioRef.current = false;
+      return;
+    }
     if (!recording && justStoppedRef.current && recitedText.trim() && verifyStatus === "idle") {
       justStoppedRef.current = false;
       runVerify(recitedText);
