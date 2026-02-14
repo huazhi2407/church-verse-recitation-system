@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [todayCheckIn, setTodayCheckIn] = useState<boolean | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const recognitionRef = useRef<{ stop: () => void } | null>(null);
 
   const now = new Date();
   const weekId = getWeekId(now);
@@ -69,6 +70,10 @@ export default function DashboardPage() {
 
   const startRecording = async () => {
     try {
+      setRecitedText("");
+      setVerifyStatus("idle");
+      recognitionRef.current = null;
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
       mediaRecorderRef.current = mr;
@@ -80,9 +85,37 @@ export default function DashboardPage() {
         stream.getTracks().forEach((t) => t.stop());
       };
       mr.start();
+
+      // 錄音同時啟動語音辨識（辨識「正在說」的內容，結束錄音時就有文字）
+      const Win = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+      const Recognition = Win.SpeechRecognition || Win.webkitSpeechRecognition;
+      if (typeof Recognition !== "undefined") {
+        const RecClass = Recognition as new () => {
+          continuous: boolean;
+          interimResults: boolean;
+          lang: string;
+          onresult: (e: { results: unknown }) => void;
+          onend: () => void;
+          start: () => void;
+          stop: () => void;
+        };
+        const rec = new RecClass();
+        rec.continuous = true;
+        rec.interimResults = false;
+        rec.lang = "zh-TW";
+        rec.onresult = (e: { results: unknown }) => {
+          const results = e.results as Iterable<{ 0: { transcript: string }; length: number }>;
+          const t = Array.from(results)
+            .map((r) => r[0].transcript)
+            .join("");
+          if (t) setRecitedText((prev) => (prev ? prev + t : t));
+        };
+        rec.onend = () => {};
+        rec.start();
+        recognitionRef.current = rec;
+      }
+
       setRecording(true);
-      setVerifyStatus("idle");
-      setRecitedText("");
     } catch (err) {
       console.error(err);
       setVerifyStatus("fail");
@@ -92,38 +125,16 @@ export default function DashboardPage() {
   const stopRecording = () => {
     const mr = mediaRecorderRef.current;
     if (!mr || mr.state !== "recording") return;
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (_) {}
+      recognitionRef.current = null;
+    }
+
     mr.stop();
     setRecording(false);
-    // 使用 Web Speech API 辨識（若瀏覽器支援）
-    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-    const url = URL.createObjectURL(blob);
-    const recognition = (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
-      || (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
-    if (typeof recognition !== "undefined") {
-      const RecClass = recognition as new () => { continuous: boolean; interimResults: boolean; lang: string; onresult: (e: { results: unknown }) => void; onend: () => void; start: () => void; stop: () => void };
-      const rec = new RecClass();
-      rec.continuous = true;
-      rec.interimResults = false;
-      rec.lang = "zh-TW";
-      rec.onresult = (e: { results: unknown }) => {
-        const results = e.results as Iterable<{ 0: { transcript: string }; length: number }>;
-        const t = Array.from(results)
-          .map((r) => r[0].transcript)
-          .join("");
-        setRecitedText((prev) => prev + t);
-      };
-      rec.onend = () => URL.revokeObjectURL(url);
-      rec.start();
-      // 簡化：用 setTimeout 模擬辨識結束後再關閉（實際可改為用 blob 送後端語音辨識）
-      setTimeout(() => {
-        try {
-          rec.stop();
-        } catch (_) {}
-      }, 3000);
-    } else {
-      // 不支援語音辨識時，稍後顯示輸入框由使用者手動輸入
-      setRecitedText("");
-    }
   };
 
   const handleVerify = async () => {
