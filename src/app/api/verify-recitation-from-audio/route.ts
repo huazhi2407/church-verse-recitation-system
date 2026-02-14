@@ -111,17 +111,29 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("Verify from audio error:", e);
-    const err = e as { code?: number; message?: string; details?: string };
+    const err = e as {
+      message?: string;
+      details?: string | { message?: string }[];
+      code?: number;
+    };
+    const raw =
+      err?.message ??
+      (typeof err?.details === "string" ? err.details : Array.isArray(err?.details) ? err.details[0]?.message : undefined) ??
+      (e instanceof Error ? e.message : String(e));
+    const msg = (raw ?? "").toLowerCase();
     let message = "音檔偵測失敗，請稍後再試";
-    if (err?.message) {
-      const msg = err.message.toLowerCase();
-      if (msg.includes("invalid audio") || msg.includes("encoding") || msg.includes("sample rate") || msg.includes("unsupported")) {
-        message = "音檔格式不支援，請用「開始錄音」錄製或上傳 WebM/Opus 格式";
-      } else if (msg.includes("resource exhausted") || msg.includes("quota") || msg.includes("deadline") || msg.includes("exceeded")) {
-        message = "語音辨識服務忙碌或逾時，請稍後再試（音檔建議 1 分鐘內）";
-      } else if (msg.includes("unauthenticated") || msg.includes("permission denied")) {
-        message = "伺服器語音辨識未設定完成，請聯絡管理員";
-      }
+    if (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample rate") || msg.includes("unsupported") || msg.includes("3 invalid_argument")) {
+      message = "音檔格式不支援，請用「開始錄音」錄製或上傳 WebM/Opus 格式";
+    } else if (msg.includes("resource exhausted") || msg.includes("quota") || msg.includes("deadline") || msg.includes("exceeded") || msg.includes("4 deadline") || msg.includes("8 resource_exhausted")) {
+      message = "語音辨識服務忙碌或逾時，請稍後再試（音檔建議 1 分鐘內）";
+    } else if (msg.includes("unauthenticated") || msg.includes("permission denied") || msg.includes("7 permission_denied") || msg.includes("16 unauthenticated")) {
+      message = "伺服器語音辨識未設定完成，請聯絡管理員";
+    } else if (msg.includes("fetch") || msg.includes("econnrefused") || msg.includes("enotfound") || msg.includes("network")) {
+      message = "無法下載音檔，請確認網址有效或稍後再試";
+    } else if (raw && raw.length < 120) {
+      message = `音檔偵測失敗：${raw}`;
+    } else if (raw) {
+      message = `音檔偵測失敗：${raw.slice(0, 80)}…`;
     }
     return NextResponse.json({ error: message }, { status: 500 });
   }
