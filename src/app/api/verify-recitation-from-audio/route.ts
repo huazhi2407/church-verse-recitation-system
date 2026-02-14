@@ -43,6 +43,13 @@ export async function POST(request: Request) {
       );
     }
     const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+    const sizeMB = audioBuffer.length / (1024 * 1024);
+    if (sizeMB > 10) {
+      return NextResponse.json(
+        { error: "音檔過大（超過 10MB），請縮短錄音或壓縮後再試" },
+        { status: 400 }
+      );
+    }
 
     // 2. 語音轉文字（Google Cloud Speech-to-Text）
     const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -104,9 +111,18 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     console.error("Verify from audio error:", e);
-    return NextResponse.json(
-      { error: "音檔偵測失敗，請稍後再試" },
-      { status: 500 }
-    );
+    const err = e as { code?: number; message?: string; details?: string };
+    let message = "音檔偵測失敗，請稍後再試";
+    if (err?.message) {
+      const msg = err.message.toLowerCase();
+      if (msg.includes("invalid audio") || msg.includes("encoding") || msg.includes("sample rate") || msg.includes("unsupported")) {
+        message = "音檔格式不支援，請用「開始錄音」錄製或上傳 WebM/Opus 格式";
+      } else if (msg.includes("resource exhausted") || msg.includes("quota") || msg.includes("deadline") || msg.includes("exceeded")) {
+        message = "語音辨識服務忙碌或逾時，請稍後再試（音檔建議 1 分鐘內）";
+      } else if (msg.includes("unauthenticated") || msg.includes("permission denied")) {
+        message = "伺服器語音辨識未設定完成，請聯絡管理員";
+      }
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
