@@ -10,7 +10,8 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { auth, db, storage } from "@/lib/firebase";
 import Link from "next/link";
 import {
   getWeekId,
@@ -37,6 +38,17 @@ export default function DashboardPage() {
   >("idle");
   const [todayCheckIn, setTodayCheckIn] = useState<boolean | null>(null);
   const [testFirstVerseOnly, setTestFirstVerseOnly] = useState(true);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioUrlInput, setAudioUrlInput] = useState("");
+  const [audioVerifyStatus, setAudioVerifyStatus] = useState<
+    "idle" | "uploading" | "checking" | "pass" | "fail"
+  >("idle");
+  const [audioVerifyResult, setAudioVerifyResult] = useState<{
+    pass: boolean;
+    accuracy: number;
+    transcript?: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -171,6 +183,69 @@ export default function DashboardPage() {
   };
 
   const handleVerify = () => runVerify(recitedText);
+
+  const verifyFromAudioUrl = async (url: string) => {
+    setAudioVerifyStatus("checking");
+    setAudioVerifyResult(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch("/api/verify-recitation-from-audio", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token ?? ""}`,
+        },
+        body: JSON.stringify({
+          weekId,
+          day: dayOfWeek,
+          audioUrl: url,
+          testFirstVerseOnly: testFirstVerseOnly || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAudioVerifyResult({ pass: false, accuracy: 0, transcript: data.error });
+        setAudioVerifyStatus("fail");
+        return;
+      }
+      setAudioVerifyResult({
+        pass: data.pass,
+        accuracy: data.accuracy ?? 0,
+        transcript: data.transcript,
+      });
+      setAudioVerifyStatus(data.pass ? "pass" : "fail");
+      if (data.pass) {
+        setVerifyStatus("pass");
+        setVerifyAccuracy(data.accuracy ?? 0);
+      }
+    } catch {
+      setAudioVerifyResult({ pass: false, accuracy: 0 });
+      setAudioVerifyStatus("fail");
+    }
+  };
+
+  const handleVerifyFromAudio = async () => {
+    if (audioFile) {
+      setAudioVerifyStatus("uploading");
+      setAudioVerifyResult(null);
+      try {
+        const ext = audioFile.name.includes(".") ? audioFile.name.slice(audioFile.name.lastIndexOf(".")) : ".webm";
+        const path = `recordings/${user!.uid}/${weekId}/audio-${Date.now()}${ext}`;
+        const storageRef = ref(storage, path);
+        await uploadBytesResumable(storageRef, audioFile);
+        const url = await getDownloadURL(storageRef);
+        setAudioFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        await verifyFromAudioUrl(url);
+      } catch (e) {
+        console.error(e);
+        setAudioVerifyResult({ pass: false, accuracy: 0, transcript: "上傳失敗" });
+        setAudioVerifyStatus("fail");
+      }
+    } else if (audioUrlInput.trim()) {
+      await verifyFromAudioUrl(audioUrlInput.trim());
+    }
+  };
 
   const resetForRerecord = () => {
     setRecitedText("");
@@ -396,6 +471,70 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
+
+              <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+                <p className="text-sm font-medium text-[var(--text)]">用音檔驗證</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
+                />
+                <div className="flex flex-wrap gap-2 items-center">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-2 rounded-lg border border-white/20 text-sm hover:bg-white/5"
+                  >
+                    {audioFile ? audioFile.name : "選擇音檔"}
+                  </button>
+                  <span className="text-[var(--muted)] text-xs">或</span>
+                  <input
+                    type="url"
+                    value={audioUrlInput}
+                    onChange={(e) => setAudioUrlInput(e.target.value)}
+                    placeholder="貼上已上傳的錄音網址"
+                    className="flex-1 min-w-[180px] rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVerifyFromAudio}
+                    disabled={
+                      (audioVerifyStatus === "uploading" || audioVerifyStatus === "checking") ||
+                      (!audioFile && !audioUrlInput.trim())
+                    }
+                    className="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium disabled:opacity-50"
+                  >
+                    {audioVerifyStatus === "uploading"
+                      ? "上傳中…"
+                      : audioVerifyStatus === "checking"
+                        ? "AI 偵測中…"
+                        : "用音檔驗證"}
+                  </button>
+                </div>
+                {audioVerifyStatus === "pass" && audioVerifyResult && (
+                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-sm">
+                    <p className="text-emerald-400 font-medium">準確度 {audioVerifyResult.accuracy}%，通過</p>
+                    {audioVerifyResult.transcript && (
+                      <p className="text-[var(--muted)] mt-1 truncate" title={audioVerifyResult.transcript}>
+                        辨識：{audioVerifyResult.transcript}
+                      </p>
+                    )}
+                    <p className="text-emerald-400/90 text-xs mt-1">可於上方按「確認簽到」</p>
+                  </div>
+                )}
+                {audioVerifyStatus === "fail" && audioVerifyResult && (
+                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm">
+                    <p className="text-red-400">
+                      準確度 {audioVerifyResult.accuracy}%，未達 90%
+                      {audioVerifyResult.transcript && typeof audioVerifyResult.transcript === "string" && !audioVerifyResult.transcript.includes("失敗") && (
+                        <span className="text-[var(--muted)]"> · 辨識：{audioVerifyResult.transcript}</span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </section>
