@@ -1,0 +1,69 @@
+type Church @table {
+  name: String!
+  address: String!
+  contactEmail: String!
+  website: String
+  description: String
+  logoUrl: String
+  phone: String
+  createdAt: Timestamp!
+}
+
+type Event @table {
+  church: Church
+  title: String!
+  eventDate: Date!
+  startTime: Timestamp!
+  endTime: Timestamp!
+  description: String
+  location: String
+  imageUrl: String
+  createdAt: Timestamp!
+}
+
+type Sermon @table {
+  church: Church
+  title: String!
+  sermonDate: Date!
+  speaker: String!
+  notes: String
+  audioUrl: String
+  videoUrl: String
+  createdAt: Timestamp!
+}
+
+type Verse @table {
+  sermon: Sermon
+  book: String!
+  chapter: Int!
+  verseNumber: Int!
+  text: String
+  createdAt: Timestamp!
+}
+
+type User @table {
+  displayName: String!
+  email: String
+  photoUrl: String
+  church: Church
+  createdAt: Timestamp!
+}
+
+type Ministry @table {
+  church: Church
+  name: String!
+  description: String
+  contactEmail: String
+  contactPerson: String
+  createdAt: Timestamp!
+}
+
+type Announcement @table {
+  church: Church
+  title: String!
+  content: String!
+  publishDate: Date!
+  imageUrl: String
+  expiresAt: Date
+  createdAt: Timestamp!
+}
