@@ -15,12 +15,20 @@ function stripTone(py: string): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+const CHUNK_SIZE = 400;
+
 function toPlainPinyin(text: string): string {
   if (!text || !text.trim()) return "";
+  const t = text.trim();
+  const parts: string[] = [];
   try {
-    const arr = pinyin(text, { style: pinyin.STYLE_TONE, heteronym: false });
-    const syllables = arr.map((readings) => (readings[0] ? stripTone(readings[0]) : ""));
-    return syllables.join(" ");
+    for (let i = 0; i < t.length; i += CHUNK_SIZE) {
+      const chunk = t.slice(i, i + CHUNK_SIZE);
+      const arr = pinyin(chunk, { style: pinyin.STYLE_TONE, heteronym: false });
+      const syllables = arr.map((readings) => (readings[0] ? stripTone(readings[0]) : ""));
+      parts.push(syllables.join(" "));
+    }
+    return parts.join(" ").replace(/\s+/g, " ").trim();
   } catch {
     return "";
   }
@@ -32,6 +40,15 @@ function removeVerseNumbers(text: string): string {
     .replace(/\「[一二三四五六七八九十百千零０-９0-9]+\」/g, "")
     .replace(/第[一二三四五六七八九十百千零０-９0-9]+節/g, "")
     .replace(/^[一二三四五六七八九十百千零０-９0-9]+\s*[\「\"]?/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** 清理 STT 常見雜訊：方括號、全形數字等 */
+function normalizeRecitedText(s: string): string {
+  return s
+    .replace(/\s*\[[^\]]*\]\s*/g, " ")
+    .replace(/[\uFF10-\uFF19]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -55,7 +72,7 @@ export function verifyRecitation(
       .replace(/[,，.。、；;：:]/g, " ")
       .trim();
   const expectedNorm = clean(removeVerseNumbers(expected));
-  const recitedNorm = clean(removeVerseNumbers(recitedText));
+  const recitedNorm = clean(removeVerseNumbers(normalizeRecitedText(recitedText)));
   const expectedPinyin = toPlainPinyin(expectedNorm);
   const recitedPinyin = toPlainPinyin(recitedNorm);
 
