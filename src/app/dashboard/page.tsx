@@ -111,9 +111,9 @@ export default function DashboardPage() {
           setAudioVerifyStatus("uploading");
           uploadBytesResumable(storageRef, blob)
             .then(() => getDownloadURL(storageRef))
-            .then((url: string) => {
+            .then((url) => {
               setAudioVerifyStatus("checking");
-              return verifyFromAudioUrl(url);
+              return verifyFromAudioUrl(typeof url === "string" ? url : String(url));
             })
             .catch(() => setAudioVerifyStatus("idle"));
         }
