@@ -3,10 +3,32 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { verifyRecitation } from "@/lib/verifyRecitationLogic";
 import Speech from "@google-cloud/speech";
 
+type EncodingConfig =
+  | { encoding: "WEBM_OPUS"; sampleRateHertz: number }
+  | { encoding: "MP3" }
+  | { encoding: "FLAC" }
+  | { encoding: "OGG_OPUS"; sampleRateHertz: number };
+
+function detectAudioConfig(buffer: Buffer): EncodingConfig | null {
+  const b = buffer;
+  if (b.length < 4) return null;
+  if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) {
+    return { encoding: "WEBM_OPUS", sampleRateHertz: 48000 };
+  }
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return { encoding: "MP3" };
+  if (b[0] === 0xff && (b[1] === 0xfb || b[1] === 0xfa)) return { encoding: "MP3" };
+  if (b[0] === 0x66 && b[1] === 0x4c && b[2] === 0x61 && b[3] === 0x43) return { encoding: "FLAC" };
+  if (b[0] === 0x4f && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53) {
+    return { encoding: "OGG_OPUS", sampleRateHertz: 48000 };
+  }
+  return null;
+}
+
 /**
  * 存入的音檔直接給 AI 偵測：下載音檔 → 語音轉文字 → 用現有邏輯驗證
  * body: { weekId, day, audioUrl, testFirstVerseOnly? }
  * audioUrl: Firebase Storage 的 getDownloadURL() 網址（需可公開讀取或帶 token）
+ * 支援格式：WebM/Opus、MP3、FLAC、OGG/Opus
  */
 export async function POST(request: Request) {
   try {
@@ -67,24 +89,44 @@ export async function POST(request: Request) {
       credentials: { client_email: clientEmail, private_key: privateKey },
     });
 
-    const [response] = await speech.recognize({
-      audio: { content: audioBuffer.toString("base64") },
-      config: {
-        encoding: "WEBM_OPUS" as const,
-        sampleRateHertz: 48000,
+    let audioConfig = detectAudioConfig(audioBuffer) ?? { encoding: "WEBM_OPUS" as const, sampleRateHertz: 48000 };
+    const base64 = audioBuffer.toString("base64");
+    let response: Awaited<ReturnType<Speech.SpeechClient["recognize"]>>[0] | null = null;
+
+    const runRecognize = (cfg: typeof audioConfig) => {
+      const config: { encoding: string; sampleRateHertz?: number; languageCode: string } = {
         languageCode: "zh-TW",
-      },
-    });
+        encoding: cfg.encoding,
+      };
+      if ("sampleRateHertz" in cfg) config.sampleRateHertz = cfg.sampleRateHertz;
+      return speech.recognize({ audio: { content: base64 }, config });
+    };
+
+    try {
+      [response] = await runRecognize(audioConfig);
+    } catch (firstErr) {
+      const msg = String((firstErr as Error).message).toLowerCase();
+      if (
+        (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample")) &&
+        audioConfig.encoding === "WEBM_OPUS" &&
+        audioConfig.sampleRateHertz === 48000
+      ) {
+        audioConfig = { encoding: "WEBM_OPUS", sampleRateHertz: 44100 };
+        [response] = await runRecognize(audioConfig);
+      } else {
+        throw firstErr;
+      }
+    }
 
     const transcript =
-      response.results
+      response?.results
         ?.map((r) => r.alternatives?.[0]?.transcript)
         .filter(Boolean)
         .join(" ") ?? "";
 
     if (!transcript.trim()) {
       return NextResponse.json(
-        { error: "無法辨識音檔內容，請確認為中文語音且格式正確（建議 WebM/Opus）" },
+        { error: "無法辨識音檔內容，請確認為中文語音（支援 WebM/Opus、MP3、FLAC、OGG）" },
         { status: 400 }
       );
     }
@@ -123,7 +165,7 @@ export async function POST(request: Request) {
     const msg = (raw ?? "").toLowerCase();
     let message = "音檔偵測失敗，請稍後再試";
     if (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample rate") || msg.includes("unsupported") || msg.includes("3 invalid_argument")) {
-      message = "音檔格式不支援，請用「開始錄音」錄製或上傳 WebM/Opus 格式";
+      message = "音檔格式不支援，請用「開始錄音」錄製或上傳 WebM/Opus、MP3、FLAC、OGG 格式";
     } else if (msg.includes("resource exhausted") || msg.includes("quota") || msg.includes("deadline") || msg.includes("exceeded") || msg.includes("4 deadline") || msg.includes("8 resource_exhausted")) {
       message = "語音辨識服務忙碌或逾時，請稍後再試（音檔建議 1 分鐘內）";
     } else if (msg.includes("unauthenticated") || msg.includes("permission denied") || msg.includes("7 permission_denied") || msg.includes("16 unauthenticated")) {
