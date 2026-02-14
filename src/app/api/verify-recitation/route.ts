@@ -30,6 +30,17 @@ function toPlainPinyin(text: string): string {
   }
 }
 
+/** 移除經文中的節數／經節標記，背誦時不用講「十六」等節數 */
+function removeVerseNumbers(text: string): string {
+  return text
+    .replace(/\{[一二三四五六七八九十百千零０-９0-9]+\}/g, "") // {十六}、{1} 等
+    .replace(/\「[一二三四五六七八九十百千零０-９0-9]+\」/g, "") // 「十六」「一」等
+    .replace(/第[一二三四五六七八九十百千零０-９0-9]+節/g, "") // 第十六節、第1節等
+    .replace(/^[一二三四五六七八九十百千零０-９0-9]+\s*[\「\"]?/g, "") // 開頭 十六「 或 16 "
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * 驗證背誦：以「拼音」比對，字不同但讀音相同即算對
  * body: { weekId, day, recitedText }
@@ -73,8 +84,10 @@ export async function POST(request: Request) {
         .replace(/\s+/g, " ")
         .replace(/[,，.。、；;：:]/g, " ")
         .trim();
-    const expectedPinyin = toPlainPinyin(clean(expected));
-    const recitedPinyin = toPlainPinyin(clean(recitedText));
+    const expectedNorm = clean(removeVerseNumbers(expected));
+    const recitedNorm = clean(removeVerseNumbers(recitedText));
+    const expectedPinyin = toPlainPinyin(expectedNorm);
+    const recitedPinyin = toPlainPinyin(recitedNorm);
 
     if (expectedPinyin.length < 2) {
       const acc = recitedPinyin.length >= 1 ? 100 : 0;

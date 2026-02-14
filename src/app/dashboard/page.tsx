@@ -283,6 +283,9 @@ export default function DashboardPage() {
           <p className="text-sm text-[var(--muted)]">
             錄音背誦經文，AI 會給出準確度；達 90% 以上即可簽到，低於 90% 需重錄。
           </p>
+          <p className="text-xs text-[var(--muted)]">
+            不需唸出章節編號（如「十六」），只唸經文內容即可。
+          </p>
 
           {todayCheckIn ? (
             <p className="text-emerald-400 font-medium">✓ 今日已簽到</p>
