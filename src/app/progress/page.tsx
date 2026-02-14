@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
-import { auth } from "@/lib/firebase";
+import { ref, getDownloadURL } from "firebase/storage";
+import { auth, storage } from "@/lib/firebase";
 import Link from "next/link";
 import {
   getWeekId,
@@ -39,6 +40,9 @@ export default function ProgressPage() {
   const [weekId, setWeekId] = useState(() => getWeekId(new Date()));
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [recordings, setRecordings] = useState<{ path: string; userId: string; userName: string; name: string }[]>([]);
+  const [loadingRecordings, setLoadingRecordings] = useState(false);
+  const [playingPath, setPlayingPath] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -66,6 +70,43 @@ export default function ProgressPage() {
       cancelled = true;
     };
   }, [user, weekId]);
+
+  useEffect(() => {
+    if (!user || user.role !== "admin") return;
+    let cancelled = false;
+    setLoadingRecordings(true);
+    setRecordings([]);
+    auth.currentUser?.getIdToken().then((token) => {
+      if (cancelled) return;
+      fetch(`/api/admin/recordings?weekId=${encodeURIComponent(weekId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled && data.recordings) setRecordings(data.recordings);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setLoadingRecordings(false);
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, weekId]);
+
+  const playRecording = async (path: string) => {
+    try {
+      setPlayingPath(path);
+      const url = await getDownloadURL(ref(storage, path));
+      const audio = new Audio(url);
+      audio.onended = () => setPlayingPath(null);
+      audio.onerror = () => setPlayingPath(null);
+      await audio.play();
+    } catch {
+      setPlayingPath(null);
+    }
+  };
 
   const now = new Date();
   const currentWeekId = getWeekId(now);
@@ -198,6 +239,41 @@ export default function ProgressPage() {
             </p>
           )}
         </div>
+      )}
+
+      {user?.role === "admin" && (
+        <section className="mt-8 rounded-2xl bg-[var(--card)] border border-white/10 p-6">
+          <h2 className="font-semibold mb-3">錄音紀錄（管理員）</h2>
+          <p className="text-sm text-[var(--muted)] mb-3">本週 {formatWeekLabel(weekId)} 所有人上傳的錄音，可點播放聆聽。</p>
+          {loadingRecordings ? (
+            <p className="text-[var(--muted)]">載入中…</p>
+          ) : recordings.length === 0 ? (
+            <p className="text-[var(--muted)]">本週尚無錄音</p>
+          ) : (
+            <ul className="space-y-2">
+              {recordings.map((r) => (
+                <li
+                  key={r.path}
+                  className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0"
+                >
+                  <span className="text-[var(--muted)] shrink-0">{r.userId}</span>
+                  <span className="shrink-0">{r.userName}</span>
+                  <span className="text-[var(--muted)] text-sm truncate flex-1" title={r.name}>
+                    {r.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => playRecording(r.path)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500 disabled:opacity-50"
+                    disabled={playingPath !== null}
+                  >
+                    {playingPath === r.path ? "播放中…" : "播放"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </main>
   );

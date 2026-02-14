@@ -41,6 +41,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const role = (data.role as string) === "admin" ? "admin" : "member";
+    await adminAuth.setCustomUserClaims(num, { role });
+
     // 使用帳號編號作為 Firebase Auth uid，發放 custom token
     const customToken = await adminAuth.createCustomToken(num);
 
