@@ -280,15 +280,20 @@ export default function DashboardPage() {
               </div>
 
               <div>
+                {!recitedText.trim() && (
+                  <div className="mb-3 p-3 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 text-sm">
+                    <strong>手機無法自動辨識錄音</strong>時，請在下方輸入或貼上您背誦的經文內容，再按「驗證背誦」即可。
+                  </div>
+                )}
                 <label className="block text-sm text-[var(--muted)] mb-1">
                   背誦內容（可錄音辨識或直接輸入）
                 </label>
                 <textarea
                   value={recitedText}
                   onChange={(e) => setRecitedText(e.target.value)}
-                  rows={3}
-                  placeholder="錄音結束後會自動帶入辨識結果，或直接貼上／輸入經文"
-                  className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                  rows={4}
+                  placeholder="請輸入或貼上您背誦的經文內容後按「驗證背誦」"
+                  className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] min-h-[100px]"
                 />
                 <button
                   type="button"
