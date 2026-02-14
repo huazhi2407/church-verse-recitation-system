@@ -46,11 +46,10 @@ export async function POST(request: Request) {
     }
     await adminAuth.verifyIdToken(token);
 
-    const { weekId, day, recitedText, oneVerse } = (await request.json()) as {
+    const { weekId, day, recitedText } = (await request.json()) as {
       weekId?: string;
       day?: number;
       recitedText?: string;
-      oneVerse?: boolean;
     };
 
     if (!weekId || !day || day < 1 || day > 7 || typeof recitedText !== "string") {
@@ -67,9 +66,7 @@ export async function POST(request: Request) {
 
     const data = verseSnap.data()!;
     const segments = (data.segments as string[]) ?? [];
-    const expected = oneVerse
-      ? getCumulativeContent(segments, 1)
-      : getCumulativeContent(segments, day);
+    const expected = getCumulativeContent(segments, day);
 
     const clean = (s: string) =>
       s
@@ -81,7 +78,7 @@ export async function POST(request: Request) {
 
     if (expectedPinyin.length < 2) {
       const acc = recitedPinyin.length >= 1 ? 100 : 0;
-      return NextResponse.json({ pass: acc >= 95, accuracy: acc });
+      return NextResponse.json({ pass: acc >= 90, accuracy: acc });
     }
 
     const expectedSyl = expectedPinyin.split(/\s+/).filter(Boolean);
@@ -101,7 +98,7 @@ export async function POST(request: Request) {
       }
     }
     const accuracy = Math.round((matchCount / expectedSyl.length) * 100);
-    const pass = accuracy >= 95;
+    const pass = accuracy >= 90;
 
     return NextResponse.json({ pass, accuracy });
   } catch (e) {

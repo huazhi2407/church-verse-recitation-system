@@ -32,7 +32,6 @@ export default function DashboardPage() {
     "idle" | "checking" | "pass" | "fail"
   >("idle");
   const [verifyAccuracy, setVerifyAccuracy] = useState<number | null>(null);
-  const [testOneVerse, setTestOneVerse] = useState(true);
   const [checkInStatus, setCheckInStatus] = useState<
     "idle" | "saving" | "done" | "err"
   >("idle");
@@ -157,7 +156,6 @@ export default function DashboardPage() {
           weekId,
           day: dayOfWeek,
           recitedText: text.trim(),
-          oneVerse: testOneVerse,
         }),
       });
       const data = await res.json();
@@ -198,10 +196,6 @@ export default function DashboardPage() {
   const todayContent = verse
     ? getCumulativeContent(verse.segments, dayOfWeek)
     : "";
-  const displayContent = verse && testOneVerse
-    ? getCumulativeContent(verse.segments, 1)
-    : todayContent;
-
   // 結束錄音後，若有辨識結果則自動驗證（不需手動貼文）
   useEffect(() => {
     if (!recording && justStoppedRef.current && recitedText.trim() && verifyStatus === "idle") {
@@ -269,12 +263,9 @@ export default function DashboardPage() {
             <>
               <p className="text-[var(--accent)] font-medium mb-3">
                 {verse.reference}
-                {testOneVerse && (
-                  <span className="ml-2 text-amber-400 text-sm font-normal">（測試：僅第一節）</span>
-                )}
               </p>
               <p className="text-[var(--text)] leading-relaxed whitespace-pre-wrap">
-                {displayContent || "（本日尚無段落）"}
+                {todayContent || "（本日尚無段落）"}
               </p>
             </>
           )
@@ -286,21 +277,12 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {verse && (todayContent || (testOneVerse && displayContent)) && (
+      {verse && todayContent && (
         <section className="rounded-2xl bg-[var(--card)] border border-white/10 p-6 space-y-4">
           <h2 className="font-semibold">錄音 + AI 感測簽到</h2>
           <p className="text-sm text-[var(--muted)]">
-            錄音背誦經文，AI 會給出準確度；達 95% 以上即可簽到，低於 95% 需重錄。
+            錄音背誦經文，AI 會給出準確度；達 90% 以上即可簽到，低於 90% 需重錄。
           </p>
-          <label className="flex items-center gap-2 text-sm text-[var(--muted)] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={testOneVerse}
-              onChange={(e) => setTestOneVerse(e.target.checked)}
-              className="rounded border-white/20"
-            />
-            測試模式：僅驗證第一節（方便先試一節）
-          </label>
 
           {todayCheckIn ? (
             <p className="text-emerald-400 font-medium">✓ 今日已簽到</p>
@@ -361,7 +343,7 @@ export default function DashboardPage() {
 
               {verifyStatus === "fail" && verifyAccuracy !== null && (
                 <p className="text-red-400 text-sm">
-                  準確度 {verifyAccuracy}%，需達 95% 請重錄。
+                  準確度 {verifyAccuracy}%，需達 90% 請重錄。
                 </p>
               )}
 
