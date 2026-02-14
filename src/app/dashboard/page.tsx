@@ -10,8 +10,7 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { auth, db, storage } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import Link from "next/link";
 import {
   getWeekId,
@@ -39,7 +38,6 @@ export default function DashboardPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
-  const lastRecordingBlobRef = useRef<Blob | null>(null);
 
   const now = new Date();
   const weekId = getWeekId(now);
@@ -137,8 +135,6 @@ export default function DashboardPage() {
 
     mr.stop();
     setRecording(false);
-    const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-    if (blob.size > 0) lastRecordingBlobRef.current = blob;
   };
 
   const handleVerify = async () => {
@@ -176,20 +172,9 @@ export default function DashboardPage() {
       const checkinRef = doc(db, "checkins", user.uid, "weeks", weekId);
       const snap = await getDoc(checkinRef);
       const prev = snap.data() ?? {};
-      let audioUrl: string | null = null;
-
-      if (lastRecordingBlobRef.current && lastRecordingBlobRef.current.size > 0) {
-        const path = `recordings/${user.uid}/${weekId}/day${dayOfWeek}_${Date.now()}.webm`;
-        const storageRef = ref(storage, path);
-        await uploadBytes(storageRef, lastRecordingBlobRef.current);
-        audioUrl = await getDownloadURL(storageRef);
-        lastRecordingBlobRef.current = null;
-      }
-
       await setDoc(checkinRef, {
         ...prev,
         [`day${dayOfWeek}`]: serverTimestamp(),
-        ...(audioUrl && { [`day${dayOfWeek}AudioUrl`]: audioUrl }),
       });
       setCheckInStatus("done");
     } catch {
@@ -227,20 +212,12 @@ export default function DashboardPage() {
             過曆表格
           </Link>
           {user.role === "admin" && (
-            <>
-              <Link
-                href="/admin/recordings"
-                className="px-3 py-1.5 rounded-lg border border-white/20 text-sm hover:bg-white/5"
-              >
-                錄音紀錄
-              </Link>
-              <Link
-                href="/admin"
-                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium"
-              >
-                管理經文
-              </Link>
-            </>
+            <Link
+              href="/admin"
+              className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium"
+            >
+              管理經文
+            </Link>
           )}
           <button
             type="button"

@@ -26,24 +26,7 @@ export async function GET(request: Request) {
 
     if (role === "admin") {
       const usersSnap = await adminDb.collection("users").get();
-      const members: {
-        uid: string;
-        name: string;
-        day1: boolean;
-        day2: boolean;
-        day3: boolean;
-        day4: boolean;
-        day5: boolean;
-        day6: boolean;
-        day7: boolean;
-        day1AudioUrl?: string | null;
-        day2AudioUrl?: string | null;
-        day3AudioUrl?: string | null;
-        day4AudioUrl?: string | null;
-        day5AudioUrl?: string | null;
-        day6AudioUrl?: string | null;
-        day7AudioUrl?: string | null;
-      }[] = [];
+      const members: { uid: string; name: string; day1: boolean; day2: boolean; day3: boolean; day4: boolean; day5: boolean; day6: boolean; day7: boolean }[] = [];
       for (const u of usersSnap.docs) {
         const uData = u.data();
         const weekSnap = await adminDb
@@ -63,13 +46,6 @@ export async function GET(request: Request) {
           day5: !!wData.day5,
           day6: !!wData.day6,
           day7: !!wData.day7,
-          day1AudioUrl: (wData.day1AudioUrl as string) ?? null,
-          day2AudioUrl: (wData.day2AudioUrl as string) ?? null,
-          day3AudioUrl: (wData.day3AudioUrl as string) ?? null,
-          day4AudioUrl: (wData.day4AudioUrl as string) ?? null,
-          day5AudioUrl: (wData.day5AudioUrl as string) ?? null,
-          day6AudioUrl: (wData.day6AudioUrl as string) ?? null,
-          day7AudioUrl: (wData.day7AudioUrl as string) ?? null,
         });
       }
       return NextResponse.json({ weekId, members });
@@ -92,13 +68,6 @@ export async function GET(request: Request) {
       day5: !!data.day5,
       day6: !!data.day6,
       day7: !!data.day7,
-      day1AudioUrl: (data.day1AudioUrl as string) ?? null,
-      day2AudioUrl: (data.day2AudioUrl as string) ?? null,
-      day3AudioUrl: (data.day3AudioUrl as string) ?? null,
-      day4AudioUrl: (data.day4AudioUrl as string) ?? null,
-      day5AudioUrl: (data.day5AudioUrl as string) ?? null,
-      day6AudioUrl: (data.day6AudioUrl as string) ?? null,
-      day7AudioUrl: (data.day7AudioUrl as string) ?? null,
     };
     return NextResponse.json({ weekId, members: [member] });
   } catch (e) {

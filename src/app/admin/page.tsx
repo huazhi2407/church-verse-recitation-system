@@ -130,20 +130,12 @@ export default function AdminPage() {
     <main className="min-h-screen p-4 max-w-2xl mx-auto">
       <header className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">管理週經文</h1>
-        <div className="flex gap-2">
-          <Link
-            href="/admin/recordings"
-            className="px-3 py-1.5 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] text-sm hover:bg-[var(--accent)]/30"
-          >
-            錄音紀錄
-          </Link>
-          <Link
-            href="/dashboard"
-            className="px-3 py-1.5 rounded-lg border border-white/20 text-sm hover:bg-white/5"
-          >
-            返回首頁
-          </Link>
-        </div>
+        <Link
+          href="/dashboard"
+          className="px-3 py-1.5 rounded-lg border border-white/20 text-sm hover:bg-white/5"
+        >
+          返回首頁
+        </Link>
       </header>
 
       {message && (
