@@ -91,7 +91,8 @@ export async function POST(request: Request) {
 
     let audioConfig = detectAudioConfig(audioBuffer) ?? { encoding: "WEBM_OPUS" as const, sampleRateHertz: 48000 };
     const base64 = audioBuffer.toString("base64");
-    let response: Awaited<ReturnType<typeof speech.recognize>>[0] | null = null;
+    type RecognizeResult = { results?: { alternatives?: { transcript?: string }[] }[] };
+    let response: RecognizeResult | null = null;
 
     const runRecognize = (cfg: typeof audioConfig) => {
       const config: { encoding: string; sampleRateHertz?: number; languageCode: string } = {
