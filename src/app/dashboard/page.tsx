@@ -31,6 +31,7 @@ export default function DashboardPage() {
   const [verifyStatus, setVerifyStatus] = useState<
     "idle" | "checking" | "pass" | "fail"
   >("idle");
+  const [verifyAccuracy, setVerifyAccuracy] = useState<number | null>(null);
   const [checkInStatus, setCheckInStatus] = useState<
     "idle" | "saving" | "done" | "err"
   >("idle");
@@ -38,6 +39,7 @@ export default function DashboardPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  const justStoppedRef = useRef(false);
 
   const now = new Date();
   const weekId = getWeekId(now);
@@ -135,15 +137,13 @@ export default function DashboardPage() {
 
     mr.stop();
     setRecording(false);
+    justStoppedRef.current = true;
   };
 
-  const handleVerify = async () => {
-    const text = recitedText.trim();
-    if (!text) {
-      setVerifyStatus("fail");
-      return;
-    }
+  const runVerify = async (text: string) => {
+    if (!text.trim()) return;
     setVerifyStatus("checking");
+    setVerifyAccuracy(null);
     try {
       const token = await auth.currentUser?.getIdToken();
       const res = await fetch("/api/verify-recitation", {
@@ -155,14 +155,25 @@ export default function DashboardPage() {
         body: JSON.stringify({
           weekId,
           day: dayOfWeek,
-          recitedText: text,
+          recitedText: text.trim(),
         }),
       });
       const data = await res.json();
+      const accuracy = typeof data.accuracy === "number" ? data.accuracy : 0;
+      setVerifyAccuracy(accuracy);
       setVerifyStatus(data.pass ? "pass" : "fail");
     } catch {
+      setVerifyAccuracy(0);
       setVerifyStatus("fail");
     }
+  };
+
+  const handleVerify = () => runVerify(recitedText);
+
+  const resetForRerecord = () => {
+    setRecitedText("");
+    setVerifyStatus("idle");
+    setVerifyAccuracy(null);
   };
 
   const handleCheckIn = async () => {
@@ -185,6 +196,14 @@ export default function DashboardPage() {
   const todayContent = verse
     ? getCumulativeContent(verse.segments, dayOfWeek)
     : "";
+
+  // 結束錄音後，若有辨識結果則自動驗證（不需手動貼文）
+  useEffect(() => {
+    if (!recording && justStoppedRef.current && recitedText.trim() && verifyStatus === "idle") {
+      justStoppedRef.current = false;
+      runVerify(recitedText);
+    }
+  }, [recording, recitedText, verifyStatus]);
 
   if (loading) {
     return (
@@ -263,14 +282,14 @@ export default function DashboardPage() {
         <section className="rounded-2xl bg-[var(--card)] border border-white/10 p-6 space-y-4">
           <h2 className="font-semibold">錄音 + AI 感測簽到</h2>
           <p className="text-sm text-[var(--muted)]">
-            錄音背誦經文，系統驗證通過後即可簽到。
+            錄音背誦經文，AI 會給出準確度；達 95% 以上即可簽到，低於 95% 需重錄。
           </p>
 
           {todayCheckIn ? (
             <p className="text-emerald-400 font-medium">✓ 今日已簽到</p>
           ) : (
             <>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {!recording ? (
                   <button
                     type="button"
@@ -288,39 +307,26 @@ export default function DashboardPage() {
                     結束錄音
                   </button>
                 )}
-              </div>
-
-              <div>
-                {!recitedText.trim() && (
-                  <div className="mb-3 p-3 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 text-sm">
-                    <strong>手機無法自動辨識錄音</strong>時，請在下方輸入或貼上您背誦的經文內容，再按「驗證背誦」即可。
-                  </div>
+                {verifyStatus === "fail" && (
+                  <button
+                    type="button"
+                    onClick={resetForRerecord}
+                    className="px-4 py-2 rounded-lg border border-white/20 text-sm hover:bg-white/5"
+                  >
+                    重新錄音
+                  </button>
                 )}
-                <label className="block text-sm text-[var(--muted)] mb-1">
-                  背誦內容（可錄音辨識或直接輸入）
-                </label>
-                <textarea
-                  value={recitedText}
-                  onChange={(e) => setRecitedText(e.target.value)}
-                  rows={4}
-                  placeholder="請輸入或貼上您背誦的經文內容後按「驗證背誦」"
-                  className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] min-h-[100px]"
-                />
-                <button
-                  type="button"
-                  onClick={handleVerify}
-                  disabled={verifyStatus === "checking" || !recitedText.trim()}
-                  className="mt-2 px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium disabled:opacity-50"
-                >
-                  {verifyStatus === "checking"
-                    ? "驗證中…"
-                    : "驗證背誦"}
-                </button>
               </div>
 
-              {verifyStatus === "pass" && (
-                <div>
-                  <p className="text-emerald-400 text-sm mb-2">驗證通過</p>
+              {verifyStatus === "checking" && (
+                <p className="text-[var(--muted)] text-sm">AI 檢測中…</p>
+              )}
+
+              {verifyStatus === "pass" && verifyAccuracy !== null && (
+                <div className="space-y-2">
+                  <p className="text-emerald-400 font-medium">
+                    準確度 {verifyAccuracy}%，通過
+                  </p>
                   <button
                     type="button"
                     onClick={handleCheckIn}
@@ -335,10 +341,39 @@ export default function DashboardPage() {
                   </button>
                 </div>
               )}
-              {verifyStatus === "fail" && (
+
+              {verifyStatus === "fail" && verifyAccuracy !== null && (
                 <p className="text-red-400 text-sm">
-                  驗證未通過，請再背誦一次或修正內容後重新驗證。
+                  準確度 {verifyAccuracy}%，需達 95% 請重錄。
                 </p>
+              )}
+
+              {!recitedText.trim() && !recording && (
+                <div className="space-y-2">
+                  <p className="text-[var(--muted)] text-sm">
+                    結束錄音後將自動辨識並檢測，無需貼文。
+                  </p>
+                  <p className="text-amber-200/90 text-xs">
+                    若裝置無法自動辨識，可輸入經文後按「驗證」：
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={recitedText}
+                      onChange={(e) => setRecitedText(e.target.value)}
+                      placeholder="輸入背誦內容"
+                      className="flex-1 rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleVerify}
+                      disabled={verifyStatus === "checking" || !recitedText.trim()}
+                      className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium disabled:opacity-50 shrink-0"
+                    >
+                      驗證
+                    </button>
+                  </div>
+                </div>
               )}
             </>
           )}

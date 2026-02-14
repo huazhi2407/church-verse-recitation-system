@@ -49,11 +49,11 @@ export async function POST(request: Request) {
     const recitedNorm = normalize(recitedText);
 
     if (expectedNorm.length < 3) {
-      return NextResponse.json({ pass: recitedNorm.length >= 2 });
+      const acc = recitedNorm.length >= 2 ? 100 : 0;
+      return NextResponse.json({ pass: acc >= 95, accuracy: acc });
     }
 
-    // 簡易比對：背誦文字需涵蓋大部分關鍵字（至少 70% 字元 overlap 或包含）
-    const minLen = Math.floor(expectedNorm.length * 0.6);
+    // 字元比對，計算準確度（0–100）
     let matchCount = 0;
     let recitedIdx = 0;
     for (let i = 0; i < expectedNorm.length && recitedIdx < recitedNorm.length; i++) {
@@ -68,9 +68,10 @@ export async function POST(request: Request) {
         }
       }
     }
-    const pass = matchCount >= minLen;
+    const accuracy = Math.round((matchCount / expectedNorm.length) * 100);
+    const pass = accuracy >= 95;
 
-    return NextResponse.json({ pass });
+    return NextResponse.json({ pass, accuracy });
   } catch (e) {
     console.error("Verify recitation error:", e);
     return NextResponse.json(
