@@ -35,7 +35,7 @@ export default function DashboardPage() {
     "idle" | "saving" | "done" | "err"
   >("idle");
   const [todayCheckIn, setTodayCheckIn] = useState<boolean | null>(null);
-  const [testFirstVerseOnly, setTestFirstVerseOnly] = useState(false);
+  const [testFirstVerseOnly, setTestFirstVerseOnly] = useState(true);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
