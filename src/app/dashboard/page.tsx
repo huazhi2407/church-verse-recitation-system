@@ -113,7 +113,7 @@ export default function DashboardPage() {
             .then(() => getDownloadURL(storageRef))
             .then((url) => {
               setAudioVerifyStatus("checking");
-              return verifyFromAudioUrl(typeof url === "string" ? url : String(url));
+              return verifyFromAudioUrl(url as string);
             })
             .catch(() => setAudioVerifyStatus("idle"));
         }
