@@ -43,7 +43,7 @@ function removeVerseNumbers(text: string): string {
 
 /**
  * 驗證背誦：以「拼音」比對，字不同但讀音相同即算對
- * body: { weekId, day, recitedText }
+ * body: { weekId, day, recitedText, testFirstVerseOnly? }
  */
 export async function POST(request: Request) {
   try {
@@ -57,10 +57,11 @@ export async function POST(request: Request) {
     }
     await adminAuth.verifyIdToken(token);
 
-    const { weekId, day, recitedText } = (await request.json()) as {
+    const { weekId, day, recitedText, testFirstVerseOnly } = (await request.json()) as {
       weekId?: string;
       day?: number;
       recitedText?: string;
+      testFirstVerseOnly?: boolean;
     };
 
     if (!weekId || !day || day < 1 || day > 7 || typeof recitedText !== "string") {
@@ -77,7 +78,9 @@ export async function POST(request: Request) {
 
     const data = verseSnap.data()!;
     const segments = (data.segments as string[]) ?? [];
-    const expected = getCumulativeContent(segments, day);
+    const expected = testFirstVerseOnly
+      ? (segments[0] ?? "")
+      : getCumulativeContent(segments, day);
 
     const clean = (s: string) =>
       s

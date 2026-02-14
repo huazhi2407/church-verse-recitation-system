@@ -36,6 +36,7 @@ export default function DashboardPage() {
     "idle" | "saving" | "done" | "err"
   >("idle");
   const [todayCheckIn, setTodayCheckIn] = useState<boolean | null>(null);
+  const [testFirstVerseOnly, setTestFirstVerseOnly] = useState(true);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -156,6 +157,7 @@ export default function DashboardPage() {
           weekId,
           day: dayOfWeek,
           recitedText: text.trim(),
+          testFirstVerseOnly: testFirstVerseOnly || undefined,
         }),
       });
       const data = await res.json();
@@ -277,15 +279,32 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {verse && todayContent && (
+      {verse && (
         <section className="rounded-2xl bg-[var(--card)] border border-white/10 p-6 space-y-4">
           <h2 className="font-semibold">錄音 + AI 感測簽到</h2>
-          <p className="text-sm text-[var(--muted)]">
-            錄音背誦經文，AI 會給出準確度；達 90% 以上即可簽到，低於 90% 需重錄。
-          </p>
+          {!todayContent ? (
+            <p className="text-amber-200/90 text-sm">本日經文尚未填寫，可先勾選「僅驗證第一節」測試。</p>
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              錄音背誦經文，AI 會給出準確度；達 90% 以上即可簽到，低於 90% 需重錄。
+            </p>
+          )}
           <p className="text-xs text-[var(--muted)]">
             不需唸出章節編號（如「十六」），只唸經文內容即可。
           </p>
+
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+            <input
+              id="test-first-verse"
+              type="checkbox"
+              checked={testFirstVerseOnly}
+              onChange={(e) => setTestFirstVerseOnly(e.target.checked)}
+              className="w-4 h-4 rounded border-2 border-amber-400 text-amber-500 focus:ring-amber-400"
+            />
+            <label htmlFor="test-first-verse" className="text-sm font-medium text-amber-200 cursor-pointer select-none">
+              僅驗證第一節（測試用）
+            </label>
+          </div>
 
           {todayCheckIn ? (
             <p className="text-emerald-400 font-medium">✓ 今日已簽到</p>
