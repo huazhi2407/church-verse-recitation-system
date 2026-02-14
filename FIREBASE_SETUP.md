@@ -30,6 +30,14 @@
 
 ---
 
+## 3.1 啟用 Storage（錄音檔）
+
+1. 左側選單 → **Storage** → 「開始使用」
+2. 選擇「以測試模式啟動」或「安全規則」後啟用
+3. 部署時會一併部署 `storage.rules`（見下方步驟 7）
+
+---
+
 ## 4. 取得前端設定（NEXT_PUBLIC_*）
 
 1. 專案首頁 → ⚙️ **專案設定**
@@ -112,9 +120,10 @@ firebase use --add
 
 ```bash
 firebase deploy --only firestore:rules
+firebase deploy --only storage
 ```
 
-出現「Rules file firestore.rules compiled successfully」即完成。
+出現編譯成功即完成。若尚未啟用 Storage，請先到主控台啟用（見 3.1）。
 
 ---
 
