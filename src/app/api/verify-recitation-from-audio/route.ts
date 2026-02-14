@@ -32,6 +32,7 @@ function detectAudioConfig(buffer: Buffer): EncodingConfig | null {
  * body: { weekId, day, audioUrl, testFirstVerseOnly? }
  * audioUrl: Firebase Storage 的 getDownloadURL() 網址（需可公開讀取或帶 token）
  * 支援格式：WebM/Opus、MP3、FLAC、OGG/Opus
+ * @see 使用 SpeechClient named import 與 RecognizeResult 型別，避免 Speech namespace 建置錯誤
  */
 export async function POST(request: Request) {
   try {
