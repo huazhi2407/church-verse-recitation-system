@@ -2,9 +2,11 @@
 
 ## 推送／開發請用這個資料夾（避免卡住）
 
-- **本 repo 本機路徑**：`C:\Users\jerey\church-verse-recitation-system`
+- **本 repo 本機路徑**：`C:\Users\jerey\church-verse-recitation-system`（**外層**，有 `.next`、`functions`、`src` 的那一層）
+- 用 Cursor 開專案時：**檔案 → 開啟資料夾** 選上述路徑（外層），不要選裡面的 `church-verse-recitation-system`，這樣終端機與 `npm run build` 都會在外層執行。
 - 推送、建置、部署都請在這個資料夾執行（`git push`、`npm run build`）。
 - **不要**用 `bible-devotion` 底下的 `church-verse-recitation-system`，那是另一份，branch 也不同（master vs main），容易搞混。
+- 若目錄裡還有內層同名資料夾，可刪除內層，只保留外層這一份。
 
 ---
 
