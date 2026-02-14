@@ -46,10 +46,11 @@ export async function POST(request: Request) {
     }
     await adminAuth.verifyIdToken(token);
 
-    const { weekId, day, recitedText } = (await request.json()) as {
+    const { weekId, day, recitedText, oneVerse } = (await request.json()) as {
       weekId?: string;
       day?: number;
       recitedText?: string;
+      oneVerse?: boolean;
     };
 
     if (!weekId || !day || day < 1 || day > 7 || typeof recitedText !== "string") {
@@ -66,7 +67,9 @@ export async function POST(request: Request) {
 
     const data = verseSnap.data()!;
     const segments = (data.segments as string[]) ?? [];
-    const expected = getCumulativeContent(segments, day);
+    const expected = oneVerse
+      ? getCumulativeContent(segments, 1)
+      : getCumulativeContent(segments, day);
 
     const clean = (s: string) =>
       s
