@@ -97,15 +97,17 @@ export default function DashboardPage() {
     // 使用 Web Speech API 辨識（若瀏覽器支援）
     const blob = new Blob(chunksRef.current, { type: "audio/webm" });
     const url = URL.createObjectURL(blob);
-    const recognition = (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition; SpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition
-      || (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
+    const recognition = (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition
+      || (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
     if (typeof recognition !== "undefined") {
-      const rec = new recognition();
+      const RecClass = recognition as new () => { continuous: boolean; interimResults: boolean; lang: string; onresult: (e: { results: unknown }) => void; onend: () => void; start: () => void; stop: () => void };
+      const rec = new RecClass();
       rec.continuous = true;
       rec.interimResults = false;
       rec.lang = "zh-TW";
-      rec.onresult = (e: SpeechRecognitionEvent) => {
-        const t = Array.from(e.results)
+      rec.onresult = (e: { results: unknown }) => {
+        const results = e.results as Iterable<{ 0: { transcript: string }; length: number }>;
+        const t = Array.from(results)
           .map((r) => r[0].transcript)
           .join("");
         setRecitedText((prev) => prev + t);
