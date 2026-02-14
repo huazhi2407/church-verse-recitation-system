@@ -540,8 +540,8 @@ export default function DashboardPage() {
                   <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-sm">
                     <p className="text-emerald-400 font-medium">準確度 {audioVerifyResult.accuracy}%，通過</p>
                     {audioVerifyResult.transcript && (
-                      <p className="text-[var(--muted)] mt-1 truncate" title={audioVerifyResult.transcript}>
-                        辨識：{audioVerifyResult.transcript}
+                      <p className="text-[var(--muted)] text-xs mt-2 break-words max-h-24 overflow-y-auto" title={audioVerifyResult.transcript}>
+                        AI 辨識結果：{audioVerifyResult.transcript}
                       </p>
                     )}
                     <p className="text-emerald-400/90 text-xs mt-1">可於上方按「確認簽到」</p>
@@ -549,12 +549,12 @@ export default function DashboardPage() {
                 )}
                 {audioVerifyStatus === "fail" && audioVerifyResult && (
                   <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm">
-                    <p className="text-red-400">
-                      準確度 {audioVerifyResult.accuracy}%，未達 90%
-                      {audioVerifyResult.transcript && typeof audioVerifyResult.transcript === "string" && !audioVerifyResult.transcript.includes("失敗") && (
-                        <span className="text-[var(--muted)]"> · 辨識：{audioVerifyResult.transcript}</span>
-                      )}
-                    </p>
+                    <p className="text-red-400">準確度 {audioVerifyResult.accuracy}%，未達 90%</p>
+                    {audioVerifyResult.transcript && typeof audioVerifyResult.transcript === "string" && (
+                      <p className="text-[var(--muted)] text-xs mt-2 break-words max-h-24 overflow-y-auto" title={audioVerifyResult.transcript}>
+                        AI 辨識結果：{audioVerifyResult.transcript}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
