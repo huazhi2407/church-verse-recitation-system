@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { verifyRecitation } from "@/lib/verifyRecitationLogic";
-import Speech from "@google-cloud/speech";
+import { SpeechClient } from "@google-cloud/speech";
 
 /** 語音辨識回傳形狀，避免依賴 @google-cloud/speech 的型別命名空間 */
 type RecognizeResult = { results?: { alternatives?: { transcript?: string }[] }[] };
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const speech = new Speech.SpeechClient({
+    const speech = new SpeechClient({
       projectId,
       credentials: { client_email: clientEmail, private_key: privateKey },
     });
@@ -97,16 +97,17 @@ export async function POST(request: Request) {
     let response: RecognizeResult | null = null;
 
     const runRecognize = (cfg: typeof audioConfig) => {
-      const config: { encoding: string; sampleRateHertz?: number; languageCode: string } = {
-        languageCode: "zh-TW",
+      const config = {
+        languageCode: "zh-TW" as const,
         encoding: cfg.encoding,
+        ...("sampleRateHertz" in cfg && { sampleRateHertz: cfg.sampleRateHertz }),
       };
-      if ("sampleRateHertz" in cfg) config.sampleRateHertz = cfg.sampleRateHertz;
-      return speech.recognize({ audio: { content: base64 }, config });
+      return speech.recognize({ audio: { content: base64 }, config: config as Parameters<SpeechClient["recognize"]>[0]["config"] });
     };
 
     try {
-      [response] = await runRecognize(audioConfig);
+      const [res] = await runRecognize(audioConfig);
+      response = res as RecognizeResult;
     } catch (firstErr) {
       const msg = String((firstErr as Error).message).toLowerCase();
       if (
@@ -115,7 +116,8 @@ export async function POST(request: Request) {
         audioConfig.sampleRateHertz === 48000
       ) {
         audioConfig = { encoding: "WEBM_OPUS", sampleRateHertz: 44100 };
-        [response] = await runRecognize(audioConfig);
+        const [res] = await runRecognize(audioConfig);
+        response = res as RecognizeResult;
       } else {
         throw firstErr;
       }

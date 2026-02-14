@@ -1,5 +1,13 @@
 # Vercel 部署說明
 
+## 推送／開發請用這個資料夾（避免卡住）
+
+- **本 repo 本機路徑**：`C:\Users\jerey\church-verse-recitation-system`
+- 推送、建置、部署都請在這個資料夾執行（`git push`、`npm run build`）。
+- **不要**用 `bible-devotion` 底下的 `church-verse-recitation-system`，那是另一份，branch 也不同（master vs main），容易搞混。
+
+---
+
 ## 若出現 `routes-manifest.json couldn't be found`
 
 代表 Vercel 在錯誤的路徑找 `.next`，請檢查：
