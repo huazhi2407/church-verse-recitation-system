@@ -63,6 +63,7 @@ export default function DashboardPage() {
     accuracy: number;
     transcript?: string;
   } | null>(null);
+  const [lastSavedFormats, setLastSavedFormats] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingSavedToAudioRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -105,6 +106,7 @@ export default function DashboardPage() {
       setVerifyStatus("idle");
       setAudioVerifyStatus("idle");
       setAudioVerifyResult(null);
+      setLastSavedFormats([]);
       recordingSavedToAudioRef.current = false;
       recognitionRef.current = null;
 
@@ -133,18 +135,22 @@ export default function DashboardPage() {
           uploadBytesResumable(primaryRef, blob)
             .then(() => getDownloadURL(primaryRef))
             .then(async (url) => {
+              const formats: string[] = [ext === "mp4" ? "MP4" : "WebM"];
               try {
                 const wavBlob = await webmBlobToWavBlob(blob);
                 await uploadBytesResumable(ref(storage, pathWav), wavBlob);
-              } catch (_) {
-                // 瀏覽器轉 WAV 失敗不影響驗證
+                formats.push("WAV");
+              } catch (e) {
+                console.warn("WAV 轉檔失敗", e);
               }
               try {
                 const mp3Blob = await audioBlobToMp3Blob(blob);
                 await uploadBytesResumable(ref(storage, pathMp3), mp3Blob);
-              } catch (_) {
-                // 轉 MP3 失敗不影響驗證
+                formats.push("MP3");
+              } catch (e) {
+                console.warn("MP3 轉檔失敗", e);
               }
+              setLastSavedFormats(formats);
               setAudioVerifyStatus("checking");
               return verifyFromAudioUrl(url as string);
             })
@@ -569,6 +575,11 @@ export default function DashboardPage() {
                         : "用音檔驗證"}
                   </button>
                 </div>
+                {lastSavedFormats.length > 0 && (
+                  <p className="text-[var(--muted)] text-xs mt-1">
+                    已另存至 Storage：{lastSavedFormats.join("、")}
+                  </p>
+                )}
                 {audioVerifyStatus === "pass" && audioVerifyResult && (
                   <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-sm">
                     <p className="text-emerald-400 font-medium">準確度 {audioVerifyResult.accuracy}%，通過</p>
