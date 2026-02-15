@@ -21,6 +21,19 @@ import {
 } from "@/lib/weekUtils";
 import { webmBlobToWavBlob } from "@/lib/webmToWav";
 
+function getGeminiFriendlyMimeType(): string | undefined {
+  const types = [
+    "audio/mp4",
+    "audio/mp4; codecs=mp4a",
+    "audio/webm; codecs=opus",
+    "audio/webm",
+  ];
+  for (const t of types) {
+    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return undefined;
+}
+
 export default function DashboardPage() {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
@@ -95,7 +108,8 @@ export default function DashboardPage() {
       recognitionRef.current = null;
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
+      const mimeType = getGeminiFriendlyMimeType();
+      const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = mr;
       chunksRef.current = [];
       mr.ondataavailable = (e) => {
@@ -106,20 +120,22 @@ export default function DashboardPage() {
         const chunks = chunksRef.current;
         if (chunks.length > 0 && user) {
           recordingSavedToAudioRef.current = true;
-          const blob = new Blob(chunks, { type: "audio/webm" });
+          const blobMime = mr.mimeType || "audio/webm";
+          const blob = new Blob(chunks, { type: blobMime });
           const ts = Date.now();
-          const pathWebm = `recordings/${user.uid}/${weekId}/rec-${ts}.webm`;
+          const ext = blobMime.includes("mp4") ? "mp4" : "webm";
+          const pathPrimary = `recordings/${user.uid}/${weekId}/rec-${ts}.${ext}`;
           const pathWav = `recordings/${user.uid}/${weekId}/rec-${ts}-converted.wav`;
           setAudioVerifyStatus("uploading");
-          const webmRef = ref(storage, pathWebm);
-          uploadBytesResumable(webmRef, blob)
-            .then(() => getDownloadURL(webmRef))
+          const primaryRef = ref(storage, pathPrimary);
+          uploadBytesResumable(primaryRef, blob)
+            .then(() => getDownloadURL(primaryRef))
             .then(async (url) => {
               try {
                 const wavBlob = await webmBlobToWavBlob(blob);
                 await uploadBytesResumable(ref(storage, pathWav), wavBlob);
               } catch (_) {
-                // 瀏覽器轉 WAV 失敗不影響驗證，仍用 WebM 辨識
+                // 瀏覽器轉 WAV 失敗不影響驗證
               }
               setAudioVerifyStatus("checking");
               return verifyFromAudioUrl(url as string);
