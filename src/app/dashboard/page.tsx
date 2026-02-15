@@ -20,6 +20,7 @@ import {
   DAY_LABELS,
 } from "@/lib/weekUtils";
 import { webmBlobToWavBlob } from "@/lib/webmToWav";
+import { audioBlobToMp3Blob } from "@/lib/webmToMp3";
 
 function getGeminiFriendlyMimeType(): string | undefined {
   const types = [
@@ -126,6 +127,7 @@ export default function DashboardPage() {
           const ext = blobMime.includes("mp4") ? "mp4" : "webm";
           const pathPrimary = `recordings/${user.uid}/${weekId}/rec-${ts}.${ext}`;
           const pathWav = `recordings/${user.uid}/${weekId}/rec-${ts}-converted.wav`;
+          const pathMp3 = `recordings/${user.uid}/${weekId}/rec-${ts}-converted.mp3`;
           setAudioVerifyStatus("uploading");
           const primaryRef = ref(storage, pathPrimary);
           uploadBytesResumable(primaryRef, blob)
@@ -136,6 +138,12 @@ export default function DashboardPage() {
                 await uploadBytesResumable(ref(storage, pathWav), wavBlob);
               } catch (_) {
                 // 瀏覽器轉 WAV 失敗不影響驗證
+              }
+              try {
+                const mp3Blob = await audioBlobToMp3Blob(blob);
+                await uploadBytesResumable(ref(storage, pathMp3), mp3Blob);
+              } catch (_) {
+                // 轉 MP3 失敗不影響驗證
               }
               setAudioVerifyStatus("checking");
               return verifyFromAudioUrl(url as string);
