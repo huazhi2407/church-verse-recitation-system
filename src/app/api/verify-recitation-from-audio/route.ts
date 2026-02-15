@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb, adminStorage } from "@/lib/firebase-admin";
 import { verifyRecitation } from "@/lib/verifyRecitationLogic";
-import { convertWebmToFlac } from "@/lib/convertWebmToFlac";
+import { convertWebmToLinear16 } from "@/lib/convertWebmToLinear16";
 import { SpeechClient } from "@google-cloud/speech";
 
-/** 語音辨識回傳形狀，避免依賴 @google-cloud/speech 的型別命名空間 */
 type RecognizeResult = { results?: { alternatives?: { transcript?: string }[] }[] };
 
 type EncodingConfig =
@@ -28,12 +27,22 @@ function detectAudioConfig(buffer: Buffer): EncodingConfig | null {
   return null;
 }
 
+const SPEECH_SAMPLE_RATE = 16000;
+const MAX_SIZE_MB = 10;
+/** Vercel 等環境無 ffmpeg 時，改以 WEBM_OPUS 直接辨識 */
+const WEBM_OPUS_SAMPLE_RATE = 48000;
+
+function isWebm(buffer: Buffer): boolean {
+  if (buffer.length < 4) return false;
+  return buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3;
+}
+
 /**
- * 存入的音檔直接給 AI 偵測：下載音檔 → 語音轉文字 → 用現有邏輯驗證
- * body: { weekId, day, audioUrl, testFirstVerseOnly? }
- * audioUrl: Firebase Storage 的 getDownloadURL() 網址（需可公開讀取或帶 token）
- * 支援格式：WebM/Opus、MP3、FLAC、OGG/Opus
- * @see 使用 SpeechClient named import 與 RecognizeResult 型別，避免 Speech namespace 建置錯誤
+ * 錄音驗證：接受「上傳 webm 檔」或「audioUrl」。
+ * - multipart: file (webm) + weekId + day + testFirstVerseOnly? + testFirstSixSegments?
+ * - JSON: audioUrl + weekId + day + ...
+ * 後端：存原始 webm 一份到 Storage → 轉 16kHz mono 僅供辨識 → Speech-to-Text → 驗證。
+ * 回傳：{ audioUrl, transcript, pass, accuracy }
  */
 export async function POST(request: Request) {
   try {
@@ -48,39 +57,92 @@ export async function POST(request: Request) {
     const decoded = await adminAuth.verifyIdToken(token);
     const userId = decoded.uid;
 
-    const { weekId, day, audioUrl, testFirstVerseOnly, testFirstSixSegments } = (await request.json()) as {
-      weekId?: string;
-      day?: number;
-      audioUrl?: string;
-      testFirstVerseOnly?: boolean;
-      testFirstSixSegments?: boolean;
-    };
+    let audioBuffer: Buffer;
+    let audioUrl: string;
+    let weekId: string;
+    let day: number;
+    let testFirstVerseOnly: boolean;
+    let testFirstSixSegments: boolean;
 
-    if (!weekId || !day || day < 1 || day > 7 || typeof audioUrl !== "string" || !audioUrl.trim()) {
-      return NextResponse.json(
-        { error: "請提供 weekId、day (1-7) 與 audioUrl" },
-        { status: 400 }
-      );
+    const contentType = request.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      const file = formData.get("file") as File | null;
+      if (!file || !(file instanceof Blob)) {
+        return NextResponse.json({ error: "請上傳音檔 (file)" }, { status: 400 });
+      }
+      weekId = String(formData.get("weekId") ?? "").trim();
+      day = Number(formData.get("day"));
+      testFirstVerseOnly = formData.get("testFirstVerseOnly") === "true";
+      testFirstSixSegments = formData.get("testFirstSixSegments") === "true";
+
+      if (!weekId || !day || day < 1 || day > 7) {
+        return NextResponse.json({ error: "請提供 weekId、day (1-7)" }, { status: 400 });
+      }
+
+      const ab = await file.arrayBuffer();
+      audioBuffer = Buffer.from(ab);
+      const sizeMB = audioBuffer.length / (1024 * 1024);
+      if (sizeMB > MAX_SIZE_MB) {
+        return NextResponse.json(
+          { error: `音檔過大（超過 ${MAX_SIZE_MB}MB），請縮短錄音` },
+          { status: 400 }
+        );
+      }
+
+      // 存原始 webm 到 Storage（只存一份）
+      const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET;
+      const bucket = bucketName ? adminStorage.bucket(bucketName) : adminStorage.bucket();
+      const path = `recordings/${userId}/${weekId}/rec-${Date.now()}.webm`;
+      const fileRef = bucket.file(path);
+      await fileRef.save(audioBuffer, {
+        contentType: "audio/webm",
+        metadata: { cacheControl: "public, max-age=31536000" },
+      });
+      const [signedUrl] = await fileRef.getSignedUrl({
+        action: "read",
+        expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      });
+      audioUrl = signedUrl;
+    } else {
+      const body = (await request.json()) as {
+        weekId?: string;
+        day?: number;
+        audioUrl?: string;
+        testFirstVerseOnly?: boolean;
+        testFirstSixSegments?: boolean;
+      };
+      weekId = String(body.weekId ?? "").trim();
+      day = Number(body.day);
+      testFirstVerseOnly = !!body.testFirstVerseOnly;
+      testFirstSixSegments = !!body.testFirstSixSegments;
+
+      if (!weekId || !day || day < 1 || day > 7 || typeof body.audioUrl !== "string" || !body.audioUrl.trim()) {
+        return NextResponse.json(
+          { error: "請提供 weekId、day (1-7) 與 audioUrl" },
+          { status: 400 }
+        );
+      }
+      audioUrl = body.audioUrl.trim();
+
+      const res = await fetch(audioUrl, { method: "GET" });
+      if (!res.ok) {
+        return NextResponse.json(
+          { error: "無法下載音檔，請確認網址有效" },
+          { status: 400 }
+        );
+      }
+      audioBuffer = Buffer.from(await res.arrayBuffer());
+      const sizeMB = audioBuffer.length / (1024 * 1024);
+      if (sizeMB > MAX_SIZE_MB) {
+        return NextResponse.json(
+          { error: `音檔過大（超過 ${MAX_SIZE_MB}MB）` },
+          { status: 400 }
+        );
+      }
     }
 
-    // 1. 下載音檔
-    const audioRes = await fetch(audioUrl, { method: "GET" });
-    if (!audioRes.ok) {
-      return NextResponse.json(
-        { error: "無法下載音檔，請確認網址有效且可讀取" },
-        { status: 400 }
-      );
-    }
-    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-    const sizeMB = audioBuffer.length / (1024 * 1024);
-    if (sizeMB > 10) {
-      return NextResponse.json(
-        { error: "音檔過大（超過 10MB），請縮短錄音或壓縮後再試" },
-        { status: 400 }
-      );
-    }
-
-    // 2. 語音轉文字（Google Cloud Speech-to-Text）
     const projectId = process.env.FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
@@ -96,61 +158,41 @@ export async function POST(request: Request) {
       credentials: { client_email: clientEmail, private_key: privateKey },
     });
 
-    let audioConfig = detectAudioConfig(audioBuffer) ?? { encoding: "WEBM_OPUS" as const, sampleRateHertz: 48000 };
-    let bufferToUse: Buffer = audioBuffer;
-    let encodingToUse: EncodingConfig = audioConfig;
-    let convertedFlacPath: string | undefined;
+    let base64: string;
+    let config: { languageCode: "zh-TW"; encoding: string; sampleRateHertz?: number };
 
-    // WebM/Opus 部分環境（如 Gemini、部分 Speech-to-Text）不支援，先轉成 FLAC 再辨識
-    if (audioConfig.encoding === "WEBM_OPUS") {
+    if (isWebm(audioBuffer)) {
+      // 只存 webm；辨識：優先 ffmpeg → 16kHz mono buffer → STT；失敗則改 WEBM_OPUS（Vercel 無 ffmpeg）
       try {
-        bufferToUse = await convertWebmToFlac(audioBuffer) as Buffer;
-        encodingToUse = { encoding: "FLAC" };
-        // 轉完的 FLAC 上傳到 Storage，與原錄音同路徑結構、副檔名 .flac
-        convertedFlacPath = `recordings/${userId}/${weekId}/rec-${Date.now()}-converted.flac`;
-        const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET;
-        const bucket = bucketName ? adminStorage.bucket(bucketName) : adminStorage.bucket();
-        const file = bucket.file(convertedFlacPath);
-        await file.save(bufferToUse, {
-          contentType: "audio/flac",
-          metadata: { cacheControl: "public, max-age=31536000" },
-        });
-      } catch (convertErr) {
-        console.error("WebM to FLAC conversion failed:", convertErr);
-        // 轉檔失敗時仍用原本 WebM 試一次
+        const wavBuffer = await convertWebmToLinear16(audioBuffer);
+        base64 = wavBuffer.toString("base64");
+        config = { languageCode: "zh-TW", encoding: "LINEAR16", sampleRateHertz: SPEECH_SAMPLE_RATE };
+      } catch (err) {
+        console.warn("WebM ffmpeg conversion failed, using WEBM_OPUS:", err);
+        base64 = audioBuffer.toString("base64");
+        config = { languageCode: "zh-TW", encoding: "WEBM_OPUS", sampleRateHertz: WEBM_OPUS_SAMPLE_RATE };
       }
-    }
-
-    const base64 = bufferToUse.toString("base64");
-    let response: RecognizeResult | null = null;
-
-    const runRecognize = (cfg: EncodingConfig) => {
-      const config = {
-        languageCode: "zh-TW" as const,
-        encoding: cfg.encoding,
-        ...("sampleRateHertz" in cfg && { sampleRateHertz: cfg.sampleRateHertz }),
+    } else {
+      const audioConfig = detectAudioConfig(audioBuffer);
+      if (!audioConfig) {
+        return NextResponse.json(
+          { error: "不支援的音檔格式，請用「開始錄音」錄製或上傳 WebM/MP3/FLAC/OGG" },
+          { status: 400 }
+        );
+      }
+      base64 = audioBuffer.toString("base64");
+      config = {
+        languageCode: "zh-TW",
+        encoding: audioConfig.encoding,
+        ...("sampleRateHertz" in audioConfig && { sampleRateHertz: audioConfig.sampleRateHertz }),
       };
-      return speech.recognize({ audio: { content: base64 }, config: config as Parameters<SpeechClient["recognize"]>[0]["config"] });
-    };
-
-    try {
-      const [res] = await runRecognize(encodingToUse);
-      response = res as RecognizeResult;
-    } catch (firstErr) {
-      const msg = String((firstErr as Error).message).toLowerCase();
-      if (
-        (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample")) &&
-        encodingToUse.encoding === "WEBM_OPUS" &&
-        "sampleRateHertz" in encodingToUse &&
-        encodingToUse.sampleRateHertz === 48000
-      ) {
-        const [res] = await runRecognize({ encoding: "WEBM_OPUS", sampleRateHertz: 44100 });
-        response = res as RecognizeResult;
-      } else {
-        throw firstErr;
-      }
     }
 
+    const [res] = await speech.recognize({
+      audio: { content: base64 },
+      config: config as Parameters<SpeechClient["recognize"]>[0]["config"],
+    });
+    const response = res as RecognizeResult;
     const transcript =
       response?.results
         ?.map((r) => r.alternatives?.[0]?.transcript)
@@ -159,12 +201,11 @@ export async function POST(request: Request) {
 
     if (!transcript.trim()) {
       return NextResponse.json(
-        { error: "無法辨識音檔內容，請確認為中文語音（支援 WebM/Opus、MP3、FLAC、OGG）" },
+        { error: "無法辨識音檔內容，請確認為中文語音" },
         { status: 400 }
       );
     }
 
-    // 3. 用現有邏輯驗證
     const verseSnap = await adminDb.collection("weeklyVerses").doc(weekId).get();
     if (!verseSnap.exists) {
       return NextResponse.json({ error: "該週經文不存在" }, { status: 404 });
@@ -176,37 +217,31 @@ export async function POST(request: Request) {
       segments,
       day,
       transcript,
-      !!testFirstVerseOnly,
-      !!testFirstSixSegments
+      testFirstVerseOnly,
+      testFirstSixSegments
     );
 
     return NextResponse.json({
+      audioUrl,
+      transcript: transcript.trim(),
       pass,
       accuracy,
-      transcript: transcript.trim(),
-      ...(convertedFlacPath && { convertedFlacPath }),
     });
   } catch (e) {
     console.error("Verify from audio error:", e);
-    const err = e as {
-      message?: string;
-      details?: string | { message?: string }[];
-      code?: number;
-    };
+    const err = e as { message?: string; details?: string | { message?: string }[] };
     const raw =
       err?.message ??
-      (typeof err?.details === "string" ? err.details : Array.isArray(err?.details) ? err.details[0]?.message : undefined) ??
+      (Array.isArray(err?.details) ? err?.details[0]?.message : undefined) ??
       (e instanceof Error ? e.message : String(e));
     const msg = (raw ?? "").toLowerCase();
     let message = "音檔偵測失敗，請稍後再試";
-    if (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample rate") || msg.includes("unsupported") || msg.includes("3 invalid_argument")) {
-      message = "音檔格式不支援，請用「開始錄音」錄製或上傳 WebM/Opus、MP3、FLAC、OGG 格式";
-    } else if (msg.includes("resource exhausted") || msg.includes("quota") || msg.includes("deadline") || msg.includes("exceeded") || msg.includes("4 deadline") || msg.includes("8 resource_exhausted")) {
+    if (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample") || msg.includes("unsupported")) {
+      message = "音檔格式不支援，請用「開始錄音」錄製 WebM";
+    } else if (msg.includes("resource exhausted") || msg.includes("quota") || msg.includes("deadline")) {
       message = "語音辨識服務忙碌或逾時，請稍後再試（音檔建議 1 分鐘內）";
-    } else if (msg.includes("unauthenticated") || msg.includes("permission denied") || msg.includes("7 permission_denied") || msg.includes("16 unauthenticated")) {
+    } else if (msg.includes("permission") || msg.includes("unauthenticated")) {
       message = "伺服器語音辨識未設定完成，請聯絡管理員";
-    } else if (msg.includes("fetch") || msg.includes("econnrefused") || msg.includes("enotfound") || msg.includes("network")) {
-      message = "無法下載音檔，請確認網址有效或稍後再試";
     } else if (raw && raw.length < 120) {
       message = `音檔偵測失敗：${raw}`;
     } else if (raw) {

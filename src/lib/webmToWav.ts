@@ -1,22 +1,22 @@
-/** Gemini 建議語音用 16kHz、16-bit PCM，此為預設輸出選項 */
-const GEMINI_SPEECH_SAMPLE_RATE = 16000;
+/** Speech-to-Text 語音辨識常用 16kHz */
+const DEFAULT_SPEECH_SAMPLE_RATE = 16000;
 
 export type WebmToWavOptions = {
-  /** 輸出取樣率，預設 16000（Gemini 語音建議） */
+  /** 輸出取樣率，預設 16000 */
   sampleRate?: number;
-  /** 是否轉為單聲道，預設 true（語音辨識通常用 mono） */
+  /** 是否轉為單聲道，預設 true */
   mono?: boolean;
 };
 
 /**
- * 在瀏覽器將 WebM 錄音轉成 WAV（不依賴伺服器 ffmpeg）。
- * 預設 16kHz 單聲道，方便給 Gemini / Speech-to-Text 使用。
+ * 在瀏覽器將 WebM 錄音轉成 WAV（不依賴伺服器）。
+ * 預設 16kHz 單聲道，供 Speech-to-Text 或存檔使用。
  */
 export async function webmBlobToWavBlob(
   webmBlob: Blob,
   options: WebmToWavOptions = {}
 ): Promise<Blob> {
-  const { sampleRate = GEMINI_SPEECH_SAMPLE_RATE, mono = true } = options;
+  const { sampleRate = DEFAULT_SPEECH_SAMPLE_RATE, mono = true } = options;
   const arrayBuffer = await webmBlob.arrayBuffer();
   const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const audioContext = new AudioContextClass();

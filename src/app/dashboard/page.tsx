@@ -10,8 +10,7 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { auth, db, storage } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import Link from "next/link";
 import {
   getWeekId,
@@ -19,15 +18,14 @@ import {
   getCumulativeContent,
   DAY_LABELS,
 } from "@/lib/weekUtils";
-import { webmBlobToWavBlob } from "@/lib/webmToWav";
-import { audioBlobToMp3Blob } from "@/lib/webmToMp3";
 
-function getGeminiFriendlyMimeType(): string | undefined {
+/** 優先 WebM，以便直接上傳後端 */
+function getPreferredAudioMimeType(): string | undefined {
   const types = [
-    "audio/mp4",
-    "audio/mp4; codecs=mp4a",
     "audio/webm; codecs=opus",
     "audio/webm",
+    "audio/mp4",
+    "audio/mp4; codecs=mp4a",
   ];
   for (const t of types) {
     if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) return t;
@@ -63,8 +61,8 @@ export default function DashboardPage() {
     pass: boolean;
     accuracy: number;
     transcript?: string;
+    audioUrl?: string;
   } | null>(null);
-  const [lastSavedFormats, setLastSavedFormats] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingSavedToAudioRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -107,12 +105,11 @@ export default function DashboardPage() {
       setVerifyStatus("idle");
       setAudioVerifyStatus("idle");
       setAudioVerifyResult(null);
-      setLastSavedFormats([]);
       recordingSavedToAudioRef.current = false;
       recognitionRef.current = null;
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = getGeminiFriendlyMimeType();
+      const mimeType = getPreferredAudioMimeType();
       const mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = mr;
       chunksRef.current = [];
@@ -126,36 +123,7 @@ export default function DashboardPage() {
           recordingSavedToAudioRef.current = true;
           const blobMime = mr.mimeType || "audio/webm";
           const blob = new Blob(chunks, { type: blobMime });
-          const ts = Date.now();
-          const ext = blobMime.includes("mp4") ? "mp4" : "webm";
-          const pathPrimary = `recordings/${user.uid}/${weekId}/rec-${ts}.${ext}`;
-          const pathWav = `recordings/${user.uid}/${weekId}/rec-${ts}-converted.wav`;
-          const pathMp3 = `recordings/${user.uid}/${weekId}/rec-${ts}-converted.mp3`;
-          setAudioVerifyStatus("uploading");
-          const primaryRef = ref(storage, pathPrimary);
-          uploadBytesResumable(primaryRef, blob)
-            .then(() => getDownloadURL(primaryRef))
-            .then(async (url) => {
-              const formats: string[] = [ext === "mp4" ? "MP4" : "WebM"];
-              try {
-                const wavBlob = await webmBlobToWavBlob(blob);
-                await uploadBytesResumable(ref(storage, pathWav), wavBlob);
-                formats.push("WAV");
-              } catch (e) {
-                console.warn("WAV 轉檔失敗", e);
-              }
-              try {
-                const mp3Blob = await audioBlobToMp3Blob(blob);
-                await uploadBytesResumable(ref(storage, pathMp3), mp3Blob);
-                formats.push("MP3");
-              } catch (e) {
-                console.warn("MP3 轉檔失敗", e);
-              }
-              setLastSavedFormats(formats);
-              setAudioVerifyStatus("checking");
-              return verifyFromAudioUrl(url as string);
-            })
-            .catch(() => setAudioVerifyStatus("idle"));
+          uploadAudioAndVerify(blob).catch(() => setAudioVerifyStatus("idle"));
         }
       };
       mr.start();
@@ -244,6 +212,52 @@ export default function DashboardPage() {
 
   const handleVerify = () => runVerify(recitedText);
 
+  /** 上傳 webm/音檔到後端，後端存檔、辨識、驗證，回傳 audioUrl + 辨識結果 + 準確率 */
+  const uploadAudioAndVerify = async (payload: Blob | File) => {
+    setAudioVerifyStatus("uploading");
+    setAudioVerifyResult(null);
+    const file = payload instanceof File ? payload : new File([payload], "rec.webm", { type: payload.type || "audio/webm" });
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const form = new FormData();
+      form.append("file", file);
+      form.append("weekId", weekId);
+      form.append("day", String(dayOfWeek));
+      form.append("testFirstVerseOnly", String(testFirstVerseOnly));
+      form.append("testFirstSixSegments", String(testFirstSixSegments));
+      setAudioVerifyStatus("checking");
+      const res = await fetch("/api/verify-recitation-from-audio", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token ?? ""}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAudioVerifyResult({
+          pass: false,
+          accuracy: 0,
+          transcript: data.error ?? "請求失敗",
+        });
+        setAudioVerifyStatus("fail");
+        return;
+      }
+      setAudioVerifyResult({
+        pass: data.pass,
+        accuracy: data.accuracy ?? 0,
+        transcript: data.transcript,
+        audioUrl: data.audioUrl,
+      });
+      setAudioVerifyStatus(data.pass ? "pass" : "fail");
+      if (data.pass) {
+        setVerifyStatus("pass");
+        setVerifyAccuracy(data.accuracy ?? 0);
+      }
+    } catch {
+      setAudioVerifyResult({ pass: false, accuracy: 0 });
+      setAudioVerifyStatus("fail");
+    }
+  };
+
   const verifyFromAudioUrl = async (url: string) => {
     setAudioVerifyStatus("checking");
     setAudioVerifyResult(null);
@@ -273,6 +287,7 @@ export default function DashboardPage() {
         pass: data.pass,
         accuracy: data.accuracy ?? 0,
         transcript: data.transcript,
+        audioUrl: data.audioUrl,
       });
       setAudioVerifyStatus(data.pass ? "pass" : "fail");
       if (data.pass) {
@@ -287,22 +302,9 @@ export default function DashboardPage() {
 
   const handleVerifyFromAudio = async () => {
     if (audioFile) {
-      setAudioVerifyStatus("uploading");
-      setAudioVerifyResult(null);
-      try {
-        const ext = audioFile.name.includes(".") ? audioFile.name.slice(audioFile.name.lastIndexOf(".")) : ".webm";
-        const path = `recordings/${user!.uid}/${weekId}/audio-${Date.now()}${ext}`;
-        const storageRef = ref(storage, path);
-        await uploadBytesResumable(storageRef, audioFile);
-        const url = await getDownloadURL(storageRef);
-        setAudioFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        await verifyFromAudioUrl(url);
-      } catch (e) {
-        console.error(e);
-        setAudioVerifyResult({ pass: false, accuracy: 0, transcript: "上傳失敗" });
-        setAudioVerifyStatus("fail");
-      }
+      setAudioFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      await uploadAudioAndVerify(audioFile);
     } else if (audioUrlInput.trim()) {
       await verifyFromAudioUrl(audioUrlInput.trim());
     }
@@ -601,29 +603,30 @@ export default function DashboardPage() {
                         : "用音檔驗證"}
                   </button>
                 </div>
-                {lastSavedFormats.length > 0 && (
-                  <p className="text-[var(--muted)] text-xs mt-1">
-                    已另存至 Storage：{lastSavedFormats.join("、")}
-                  </p>
-                )}
-                {audioVerifyStatus === "pass" && audioVerifyResult && (
-                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-sm">
-                    <p className="text-emerald-400 font-medium">準確度 {audioVerifyResult.accuracy}%，通過</p>
+                {(audioVerifyStatus === "pass" || audioVerifyStatus === "fail") && audioVerifyResult && (
+                  <div
+                    className={`p-3 rounded-lg text-sm ${
+                      audioVerifyStatus === "pass"
+                        ? "bg-emerald-500/10 border border-emerald-500/30"
+                        : "bg-red-500/10 border border-red-500/30"
+                    }`}
+                  >
+                    <p className={audioVerifyStatus === "pass" ? "text-emerald-400 font-medium" : "text-red-400"}>
+                      準確度 {audioVerifyResult.accuracy}%{audioVerifyStatus === "pass" ? "，通過" : "，未達 90%"}
+                    </p>
                     {audioVerifyResult.transcript && (
                       <p className="text-[var(--muted)] text-xs mt-2 break-words max-h-24 overflow-y-auto" title={audioVerifyResult.transcript}>
-                        AI 辨識結果：{audioVerifyResult.transcript}
+                        辨識結果：{audioVerifyResult.transcript}
                       </p>
                     )}
-                    <p className="text-emerald-400/90 text-xs mt-1">可於上方按「確認簽到」</p>
-                  </div>
-                )}
-                {audioVerifyStatus === "fail" && audioVerifyResult && (
-                  <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm">
-                    <p className="text-red-400">準確度 {audioVerifyResult.accuracy}%，未達 90%</p>
-                    {audioVerifyResult.transcript && typeof audioVerifyResult.transcript === "string" && (
-                      <p className="text-[var(--muted)] text-xs mt-2 break-words max-h-24 overflow-y-auto" title={audioVerifyResult.transcript}>
-                        AI 辨識結果：{audioVerifyResult.transcript}
-                      </p>
+                    {audioVerifyResult.audioUrl && (
+                      <div className="mt-2">
+                        <p className="text-[var(--muted)] text-xs mb-1">回放</p>
+                        <audio src={audioVerifyResult.audioUrl} controls className="w-full max-w-md h-9" />
+                      </div>
+                    )}
+                    {audioVerifyStatus === "pass" && (
+                      <p className="text-emerald-400/90 text-xs mt-1">可於上方按「確認簽到」</p>
                     )}
                   </div>
                 )}
