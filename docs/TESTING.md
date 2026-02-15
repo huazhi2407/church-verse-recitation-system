@@ -79,7 +79,7 @@ curl -X POST "https://church-verse-recitation-system.vercel.app/api/verify-recit
 
 1. **錄音 → 結束 → 上傳**：確認不會 500（無 ffmpeg 時會走 WEBM_OPUS 辨識）。
 2. **回放**：signed URL 可播放、無 CORS 問題。
-3. **簽到**：通過後簽到會寫入 Firestore，過曆表格會更新。
+3. **簽到**：通過後簽到會寫入 Firestore，週曆表格會更新。
 
 ---
 

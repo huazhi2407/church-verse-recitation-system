@@ -5,7 +5,7 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
  * GET /api/progress?weekId=xxx
  * 需帶 Authorization: Bearer <Firebase ID Token>
  * 一般使用者：回傳自己的該週簽到狀態
- * 管理員：回傳所有使用者的該週簽到狀態（用於過曆表格）
+ * 管理員：回傳所有使用者的該週簽到狀態（用於週曆表格）
  */
 export async function GET(request: Request) {
   try {

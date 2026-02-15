@@ -374,7 +374,7 @@ export default function DashboardPage() {
             href="/progress"
             className="px-3 py-1.5 rounded-lg border border-white/20 text-sm hover:bg-white/5"
           >
-            過曆表格
+            週曆表格
           </Link>
           {user.role === "admin" && (
             <Link

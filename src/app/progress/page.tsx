@@ -138,7 +138,7 @@ export default function ProgressPage() {
   return (
     <main className="min-h-screen p-4 max-w-4xl mx-auto">
       <header className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold">過曆表格</h1>
+        <h1 className="text-xl font-bold">週曆表格</h1>
         <Link
           href="/dashboard"
           className="px-3 py-1.5 rounded-lg border border-white/20 text-sm hover:bg-white/5"
