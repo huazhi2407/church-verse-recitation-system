@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { verifyRecitation } from "@/lib/verifyRecitationLogic";
+import { convertWebmToFlac } from "@/lib/convertWebmToFlac";
 import { SpeechClient } from "@google-cloud/speech";
 
 /** 語音辨識回傳形狀，避免依賴 @google-cloud/speech 的型別命名空間 */
@@ -94,10 +95,24 @@ export async function POST(request: Request) {
     });
 
     let audioConfig = detectAudioConfig(audioBuffer) ?? { encoding: "WEBM_OPUS" as const, sampleRateHertz: 48000 };
-    const base64 = audioBuffer.toString("base64");
+    let bufferToUse = audioBuffer;
+    let encodingToUse: EncodingConfig = audioConfig;
+
+    // WebM/Opus 部分環境（如 Gemini、部分 Speech-to-Text）不支援，先轉成 FLAC 再辨識
+    if (audioConfig.encoding === "WEBM_OPUS") {
+      try {
+        bufferToUse = await convertWebmToFlac(audioBuffer);
+        encodingToUse = { encoding: "FLAC" };
+      } catch (convertErr) {
+        console.error("WebM to FLAC conversion failed:", convertErr);
+        // 轉檔失敗時仍用原本 WebM 試一次
+      }
+    }
+
+    const base64 = bufferToUse.toString("base64");
     let response: RecognizeResult | null = null;
 
-    const runRecognize = (cfg: typeof audioConfig) => {
+    const runRecognize = (cfg: EncodingConfig) => {
       const config = {
         languageCode: "zh-TW" as const,
         encoding: cfg.encoding,
@@ -107,17 +122,17 @@ export async function POST(request: Request) {
     };
 
     try {
-      const [res] = await runRecognize(audioConfig);
+      const [res] = await runRecognize(encodingToUse);
       response = res as RecognizeResult;
     } catch (firstErr) {
       const msg = String((firstErr as Error).message).toLowerCase();
       if (
         (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample")) &&
-        audioConfig.encoding === "WEBM_OPUS" &&
-        audioConfig.sampleRateHertz === 48000
+        encodingToUse.encoding === "WEBM_OPUS" &&
+        "sampleRateHertz" in encodingToUse &&
+        encodingToUse.sampleRateHertz === 48000
       ) {
-        audioConfig = { encoding: "WEBM_OPUS", sampleRateHertz: 44100 };
-        const [res] = await runRecognize(audioConfig);
+        const [res] = await runRecognize({ encoding: "WEBM_OPUS", sampleRateHertz: 44100 });
         response = res as RecognizeResult;
       } else {
         throw firstErr;
