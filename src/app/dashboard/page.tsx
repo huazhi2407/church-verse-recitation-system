@@ -334,6 +334,9 @@ export default function DashboardPage() {
   const todayContent = verse
     ? getCumulativeContent(verse.segments, dayOfWeek)
     : "";
+  const sixDayContent = verse
+    ? getCumulativeContent(verse.segments, 6)
+    : "";
   // 結束錄音後：若已改為「存入音檔＋音檔驗證」則不跑文字驗證；否則若有辨識結果則自動文字驗證
   useEffect(() => {
     if (recordingSavedToAudioRef.current) {
@@ -457,6 +460,14 @@ export default function DashboardPage() {
               測試六節（驗證前六段累加）
             </label>
           </div>
+          {testFirstSixSegments && sixDayContent ? (
+            <div className="mt-3 p-3 rounded-xl bg-[var(--card)] border border-amber-500/30">
+              <p className="text-amber-200 text-sm font-medium mb-2">本週前六天經文（驗證範圍）</p>
+              <p className="text-[var(--text)] text-sm leading-relaxed whitespace-pre-wrap">
+                {sixDayContent}
+              </p>
+            </div>
+          ) : null}
 
           {todayCheckIn ? (
             <p className="text-emerald-400 font-medium">✓ 今日已簽到</p>
