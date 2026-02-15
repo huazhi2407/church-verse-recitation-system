@@ -95,13 +95,13 @@ export async function POST(request: Request) {
     });
 
     let audioConfig = detectAudioConfig(audioBuffer) ?? { encoding: "WEBM_OPUS" as const, sampleRateHertz: 48000 };
-    let bufferToUse = audioBuffer;
+    let bufferToUse: Buffer = audioBuffer;
     let encodingToUse: EncodingConfig = audioConfig;
 
     // WebM/Opus 部分環境（如 Gemini、部分 Speech-to-Text）不支援，先轉成 FLAC 再辨識
     if (audioConfig.encoding === "WEBM_OPUS") {
       try {
-        bufferToUse = await convertWebmToFlac(audioBuffer);
+        bufferToUse = await convertWebmToFlac(audioBuffer) as Buffer;
         encodingToUse = { encoding: "FLAC" };
       } catch (convertErr) {
         console.error("WebM to FLAC conversion failed:", convertErr);
