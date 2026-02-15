@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth, adminDb, adminStorage } from "@/lib/firebase-admin";
 import { verifyRecitation } from "@/lib/verifyRecitationLogic";
 import { convertWebmToFlac } from "@/lib/convertWebmToFlac";
 import { SpeechClient } from "@google-cloud/speech";
@@ -45,7 +45,8 @@ export async function POST(request: Request) {
     if (!token) {
       return NextResponse.json({ error: "未登入" }, { status: 401 });
     }
-    await adminAuth.verifyIdToken(token);
+    const decoded = await adminAuth.verifyIdToken(token);
+    const userId = decoded.uid;
 
     const { weekId, day, audioUrl, testFirstVerseOnly } = (await request.json()) as {
       weekId?: string;
@@ -103,6 +104,14 @@ export async function POST(request: Request) {
       try {
         bufferToUse = await convertWebmToFlac(audioBuffer) as Buffer;
         encodingToUse = { encoding: "FLAC" };
+        // 轉完的 FLAC 上傳到 Storage，與原錄音同路徑結構、副檔名 .flac
+        const flacPath = `recordings/${userId}/${weekId}/rec-${Date.now()}-converted.flac`;
+        const bucket = adminStorage.bucket();
+        const file = bucket.file(flacPath);
+        await file.save(bufferToUse, {
+          contentType: "audio/flac",
+          metadata: { cacheControl: "public, max-age=31536000" },
+        });
       } catch (convertErr) {
         console.error("WebM to FLAC conversion failed:", convertErr);
         // 轉檔失敗時仍用原本 WebM 試一次
