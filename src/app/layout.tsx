@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Noto_Sans_TC } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
+import { VersionBadge } from "@/components/VersionBadge";
+import packageJson from "../../package.json";
 
 const noto = Noto_Sans_TC({
   subsets: ["latin"],
@@ -21,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="zh-TW">
       <body className={`${noto.variable} antialiased`}>
+        <VersionBadge version={packageJson.version} />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
