@@ -53,6 +53,7 @@ export default function DashboardPage() {
   >("idle");
   const [todayCheckIn, setTodayCheckIn] = useState<boolean | null>(null);
   const [testFirstVerseOnly, setTestFirstVerseOnly] = useState(true);
+  const [testFirstSixSegments, setTestFirstSixSegments] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrlInput, setAudioUrlInput] = useState("");
   const [audioVerifyStatus, setAudioVerifyStatus] = useState<
@@ -228,6 +229,7 @@ export default function DashboardPage() {
           day: dayOfWeek,
           recitedText: text.trim(),
           testFirstVerseOnly: testFirstVerseOnly || undefined,
+          testFirstSixSegments: testFirstSixSegments || undefined,
         }),
       });
       const data = await res.json();
@@ -258,6 +260,7 @@ export default function DashboardPage() {
           day: dayOfWeek,
           audioUrl: url,
           testFirstVerseOnly: testFirstVerseOnly || undefined,
+          testFirstSixSegments: testFirstSixSegments || undefined,
         }),
       });
       const data = await res.json();
@@ -440,6 +443,18 @@ export default function DashboardPage() {
             />
             <label htmlFor="test-first-verse" className="text-sm font-medium text-amber-200 cursor-pointer select-none">
               僅驗證第一節（測試用）
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="test-six-segments"
+              type="checkbox"
+              checked={testFirstSixSegments}
+              onChange={(e) => setTestFirstSixSegments(e.target.checked)}
+              className="w-4 h-4 rounded border-2 border-amber-400 text-amber-500 focus:ring-amber-400"
+            />
+            <label htmlFor="test-six-segments" className="text-sm font-medium text-amber-200 cursor-pointer select-none">
+              測試六節（驗證前六段累加）
             </label>
           </div>
 

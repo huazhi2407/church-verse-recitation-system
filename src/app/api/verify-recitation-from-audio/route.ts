@@ -48,11 +48,12 @@ export async function POST(request: Request) {
     const decoded = await adminAuth.verifyIdToken(token);
     const userId = decoded.uid;
 
-    const { weekId, day, audioUrl, testFirstVerseOnly } = (await request.json()) as {
+    const { weekId, day, audioUrl, testFirstVerseOnly, testFirstSixSegments } = (await request.json()) as {
       weekId?: string;
       day?: number;
       audioUrl?: string;
       testFirstVerseOnly?: boolean;
+      testFirstSixSegments?: boolean;
     };
 
     if (!weekId || !day || day < 1 || day > 7 || typeof audioUrl !== "string" || !audioUrl.trim()) {
@@ -175,7 +176,8 @@ export async function POST(request: Request) {
       segments,
       day,
       transcript,
-      !!testFirstVerseOnly
+      !!testFirstVerseOnly,
+      !!testFirstSixSegments
     );
 
     return NextResponse.json({

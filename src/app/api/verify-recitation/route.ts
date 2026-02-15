@@ -4,7 +4,7 @@ import { verifyRecitation } from "@/lib/verifyRecitationLogic";
 
 /**
  * 驗證背誦：以「拼音」比對，字不同但讀音相同即算對
- * body: { weekId, day, recitedText, testFirstVerseOnly? }
+ * body: { weekId, day, recitedText, testFirstVerseOnly?, testFirstSixSegments? }
  */
 export async function POST(request: Request) {
   try {
@@ -18,11 +18,12 @@ export async function POST(request: Request) {
     }
     await adminAuth.verifyIdToken(token);
 
-    const { weekId, day, recitedText, testFirstVerseOnly } = (await request.json()) as {
+    const { weekId, day, recitedText, testFirstVerseOnly, testFirstSixSegments } = (await request.json()) as {
       weekId?: string;
       day?: number;
       recitedText?: string;
       testFirstVerseOnly?: boolean;
+      testFirstSixSegments?: boolean;
     };
 
     if (!weekId || !day || day < 1 || day > 7 || typeof recitedText !== "string") {
@@ -43,7 +44,8 @@ export async function POST(request: Request) {
       segments,
       day,
       recitedText,
-      !!testFirstVerseOnly
+      !!testFirstVerseOnly,
+      !!testFirstSixSegments
     );
 
     return NextResponse.json({ pass, accuracy });

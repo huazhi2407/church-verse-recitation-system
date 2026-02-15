@@ -55,16 +55,20 @@ function normalizeRecitedText(s: string): string {
 
 /**
  * 依「拼音」比對預期經文與背誦內容，回傳是否通過與準確度 (0–100)。
+ * testFirstVerseOnly：只驗證第一節；testFirstSixSegments：只驗證前六節累加。
  */
 export function verifyRecitation(
   segments: string[],
   day: number,
   recitedText: string,
-  testFirstVerseOnly: boolean
+  testFirstVerseOnly: boolean,
+  testFirstSixSegments?: boolean
 ): { pass: boolean; accuracy: number } {
   const expected = testFirstVerseOnly
     ? (segments[0] ?? "")
-    : getCumulativeContent(segments, day);
+    : testFirstSixSegments
+      ? getCumulativeContent(segments, 6)
+      : getCumulativeContent(segments, day);
 
   const clean = (s: string) =>
     s
