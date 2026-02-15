@@ -19,6 +19,7 @@ import {
   getCumulativeContent,
   DAY_LABELS,
 } from "@/lib/weekUtils";
+import { webmBlobToWavBlob } from "@/lib/webmToWav";
 
 export default function DashboardPage() {
   const { user, loading, signOut } = useAuth();
@@ -106,12 +107,20 @@ export default function DashboardPage() {
         if (chunks.length > 0 && user) {
           recordingSavedToAudioRef.current = true;
           const blob = new Blob(chunks, { type: "audio/webm" });
-          const path = `recordings/${user.uid}/${weekId}/rec-${Date.now()}.webm`;
-          const storageRef = ref(storage, path);
+          const ts = Date.now();
+          const pathWebm = `recordings/${user.uid}/${weekId}/rec-${ts}.webm`;
+          const pathWav = `recordings/${user.uid}/${weekId}/rec-${ts}-converted.wav`;
           setAudioVerifyStatus("uploading");
-          uploadBytesResumable(storageRef, blob)
-            .then(() => getDownloadURL(storageRef))
-            .then((url) => {
+          const webmRef = ref(storage, pathWebm);
+          uploadBytesResumable(webmRef, blob)
+            .then(() => getDownloadURL(webmRef))
+            .then(async (url) => {
+              try {
+                const wavBlob = await webmBlobToWavBlob(blob);
+                await uploadBytesResumable(ref(storage, pathWav), wavBlob);
+              } catch (_) {
+                // 瀏覽器轉 WAV 失敗不影響驗證，仍用 WebM 辨識
+              }
               setAudioVerifyStatus("checking");
               return verifyFromAudioUrl(url as string);
             })

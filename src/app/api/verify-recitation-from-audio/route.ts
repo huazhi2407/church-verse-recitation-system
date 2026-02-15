@@ -98,6 +98,7 @@ export async function POST(request: Request) {
     let audioConfig = detectAudioConfig(audioBuffer) ?? { encoding: "WEBM_OPUS" as const, sampleRateHertz: 48000 };
     let bufferToUse: Buffer = audioBuffer;
     let encodingToUse: EncodingConfig = audioConfig;
+    let convertedFlacPath: string | undefined;
 
     // WebM/Opus 部分環境（如 Gemini、部分 Speech-to-Text）不支援，先轉成 FLAC 再辨識
     if (audioConfig.encoding === "WEBM_OPUS") {
@@ -105,9 +106,10 @@ export async function POST(request: Request) {
         bufferToUse = await convertWebmToFlac(audioBuffer) as Buffer;
         encodingToUse = { encoding: "FLAC" };
         // 轉完的 FLAC 上傳到 Storage，與原錄音同路徑結構、副檔名 .flac
-        const flacPath = `recordings/${userId}/${weekId}/rec-${Date.now()}-converted.flac`;
-        const bucket = adminStorage.bucket();
-        const file = bucket.file(flacPath);
+        convertedFlacPath = `recordings/${userId}/${weekId}/rec-${Date.now()}-converted.flac`;
+        const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET;
+        const bucket = bucketName ? adminStorage.bucket(bucketName) : adminStorage.bucket();
+        const file = bucket.file(convertedFlacPath);
         await file.save(bufferToUse, {
           contentType: "audio/flac",
           metadata: { cacheControl: "public, max-age=31536000" },
@@ -180,6 +182,7 @@ export async function POST(request: Request) {
       pass,
       accuracy,
       transcript: transcript.trim(),
+      ...(convertedFlacPath && { convertedFlacPath }),
     });
   } catch (e) {
     console.error("Verify from audio error:", e);
