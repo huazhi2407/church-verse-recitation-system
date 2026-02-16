@@ -119,7 +119,9 @@ export async function POST(request: Request) {
           );
         }
       } catch (storageErr) {
-        const msg = (storageErr as Error)?.message ?? String(storageErr);
+        const err = storageErr as { message?: string; code?: number; status?: number };
+        const msg = err?.message ?? String(storageErr);
+        const code = err?.code ?? err?.status;
         console.error("[verify-recitation-from-audio] Storage save failed:", storageErr);
         if (msg.includes("Missing bucket") || msg.includes("bucket")) {
           return NextResponse.json(
@@ -127,8 +129,16 @@ export async function POST(request: Request) {
             { status: 500 }
           );
         }
+        let hint = "請檢查 Firebase Storage 是否已啟用、環境變數與服務帳號 Storage 權限";
+        if (code === 403 || msg.includes("403") || msg.toLowerCase().includes("permission")) {
+          hint = "403 權限不足：請到 Google Cloud Console → IAM，為 firebase-adminsdk 服務帳號新增「Storage 物件管理員」角色";
+        } else if (code === 404 || msg.includes("404") || msg.toLowerCase().includes("not found")) {
+          hint = "404 bucket 不存在：請確認 FIREBASE_STORAGE_BUCKET 與 Firebase 主控台 Storage 的 bucket 名稱一致（例如 xxx.firebasestorage.app）";
+        } else if (code || msg) {
+          hint = `音檔儲存失敗（${code || msg.slice(0, 60)}）。${hint}`;
+        }
         return NextResponse.json(
-          { error: "音檔儲存失敗，請檢查 Firebase Storage 是否已啟用、環境變數與服務帳號權限" },
+          { error: hint },
           { status: 500 }
         );
       }

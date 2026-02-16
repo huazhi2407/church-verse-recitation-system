@@ -231,12 +231,17 @@ export default function DashboardPage() {
         headers: { Authorization: `Bearer ${token ?? ""}` },
         body: form,
       });
-      const data = await res.json();
+      let data: { error?: string; pass?: boolean; accuracy?: number; transcript?: string; audioUrl?: string };
+      try {
+        data = await res.json();
+      } catch {
+        data = { error: res.ok ? "回應格式錯誤" : "伺服器錯誤，請稍後再試" };
+      }
       if (!res.ok) {
         setAudioVerifyResult({
           pass: false,
           accuracy: 0,
-          transcript: data.error ?? "請求失敗",
+          transcript: data?.error ?? "請求失敗",
         });
         setAudioVerifyStatus("fail");
         return;
