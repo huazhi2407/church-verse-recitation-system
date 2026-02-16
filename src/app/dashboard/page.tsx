@@ -247,7 +247,7 @@ export default function DashboardPage() {
         return;
       }
       setAudioVerifyResult({
-        pass: data.pass,
+        pass: data.pass ?? false,
         accuracy: data.accuracy ?? 0,
         transcript: data.transcript,
         audioUrl: data.audioUrl,
@@ -289,7 +289,7 @@ export default function DashboardPage() {
         return;
       }
       setAudioVerifyResult({
-        pass: data.pass,
+        pass: data.pass ?? false,
         accuracy: data.accuracy ?? 0,
         transcript: data.transcript,
         audioUrl: data.audioUrl,
