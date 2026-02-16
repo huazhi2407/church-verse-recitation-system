@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     const userId = decoded.uid;
 
     let audioBuffer: Buffer;
-    let audioUrl: string;
+    let audioUrl = "";
     let weekId: string;
     let day: number;
     let testFirstVerseOnly: boolean;
@@ -303,6 +303,12 @@ export async function POST(request: Request) {
       testFirstSixSegments
     );
 
+    if (!audioUrl) {
+      return NextResponse.json(
+        { error: "未取得音檔網址，請重試" },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({
       audioUrl,
       transcript: transcript.trim(),
