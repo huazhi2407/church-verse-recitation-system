@@ -93,24 +93,46 @@ export async function POST(request: Request) {
 
       // 存原始 webm 到 Storage（只存一份）
       try {
-        const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET;
-        const bucket = bucketName ? adminStorage.bucket(bucketName) : adminStorage.bucket();
+        const projectId = process.env.FIREBASE_PROJECT_ID;
+        const bucketName =
+          process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+          process.env.FIREBASE_STORAGE_BUCKET ||
+          (projectId ? `${projectId}.appspot.com` : "");
+        if (!bucketName) {
+          throw new Error("Missing bucket: set FIREBASE_STORAGE_BUCKET or NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET (or FIREBASE_PROJECT_ID for default)");
+        }
+        const bucket = adminStorage.bucket(bucketName);
         const path = `recordings/${userId}/${weekId}/rec-${Date.now()}.webm`;
         const fileRef = bucket.file(path);
         await fileRef.save(audioBuffer, {
           contentType: "audio/webm",
           metadata: { cacheControl: "public, max-age=31536000" },
         });
-        const [signedUrl] = await fileRef.getSignedUrl({
-          version: "v4",
-          action: "read",
-          expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
-        });
-        audioUrl = signedUrl;
+        try {
+          const [signedUrl] = await fileRef.getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
+          });
+          audioUrl = signedUrl;
+        } catch (signErr) {
+          console.error("[verify-recitation-from-audio] getSignedUrl failed:", signErr);
+          return NextResponse.json(
+            { error: "音檔已存但取得回放網址失敗，請確認服務帳號有 Storage 權限並在 Vercel 設定 FIREBASE_STORAGE_BUCKET" },
+            { status: 500 }
+          );
+        }
       } catch (storageErr) {
-        console.error("[verify-recitation-from-audio] Storage save/sign failed:", storageErr);
+        const msg = (storageErr as Error)?.message ?? String(storageErr);
+        console.error("[verify-recitation-from-audio] Storage save failed:", storageErr);
+        if (msg.includes("Missing bucket") || msg.includes("bucket")) {
+          return NextResponse.json(
+            { error: "請在 Vercel 環境變數設定 FIREBASE_STORAGE_BUCKET（或 FIREBASE_PROJECT_ID），值為 Firebase 主控台 → Storage 的 bucket 名稱" },
+            { status: 500 }
+          );
+        }
         return NextResponse.json(
-          { error: "音檔儲存或取得網址失敗，請檢查 Firebase Storage 與環境變數（FIREBASE_STORAGE_BUCKET 等）" },
+          { error: "音檔儲存失敗，請檢查 Firebase Storage 是否已啟用、環境變數與服務帳號權限" },
           { status: 500 }
         );
       }

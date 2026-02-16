@@ -30,6 +30,18 @@
 
 ---
 
+## 3.5 啟用 Storage（錄音回放需要）
+
+1. 左側選單 → **Storage** → 「開始使用」
+2. 選擇「安全規則」模式後建立預設 bucket
+3. 專案設定 → 一般 → 你的應用程式裡，`storageBucket` 即為 bucket 名稱（例如 `專案ID.appspot.com`）
+4. **部署到 Vercel 時**：在 Vercel 專案 → Settings → Environment Variables 新增：
+   - `FIREBASE_STORAGE_BUCKET` 或 `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` = 上述 bucket 名稱（與前端 firebaseConfig 的 storageBucket 相同）
+
+若未設定，錄音上傳會出現「音檔儲存或取得網址失敗」。
+
+---
+
 ## 4. 取得前端設定（NEXT_PUBLIC_*）
 
 1. 專案首頁 → ⚙️ **專案設定**
@@ -134,6 +146,7 @@ Firestore 建立好且規則部署後：
 - [ ] 新 Firebase 專案已建立
 - [ ] Authentication 已啟用
 - [ ] Firestore 已建立（測試模式可，之後用規則覆蓋）
+- [ ] Storage 已啟用，且 `.env.local` / Vercel 有設定 `FIREBASE_STORAGE_BUCKET` 或 `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
 - [ ] `.env.local` 已填好所有 NEXT_PUBLIC_* 與 FIREBASE_*
 - [ ] `firebase use` 已選到新專案
 - [ ] `firebase deploy --only firestore:rules` 已成功
