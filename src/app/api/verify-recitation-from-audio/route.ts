@@ -92,19 +92,28 @@ export async function POST(request: Request) {
       }
 
       // 存原始 webm 到 Storage（只存一份）
-      const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET;
-      const bucket = bucketName ? adminStorage.bucket(bucketName) : adminStorage.bucket();
-      const path = `recordings/${userId}/${weekId}/rec-${Date.now()}.webm`;
-      const fileRef = bucket.file(path);
-      await fileRef.save(audioBuffer, {
-        contentType: "audio/webm",
-        metadata: { cacheControl: "public, max-age=31536000" },
-      });
-      const [signedUrl] = await fileRef.getSignedUrl({
-        action: "read",
-        expires: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      });
-      audioUrl = signedUrl;
+      try {
+        const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET;
+        const bucket = bucketName ? adminStorage.bucket(bucketName) : adminStorage.bucket();
+        const path = `recordings/${userId}/${weekId}/rec-${Date.now()}.webm`;
+        const fileRef = bucket.file(path);
+        await fileRef.save(audioBuffer, {
+          contentType: "audio/webm",
+          metadata: { cacheControl: "public, max-age=31536000" },
+        });
+        const [signedUrl] = await fileRef.getSignedUrl({
+          version: "v4",
+          action: "read",
+          expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
+        });
+        audioUrl = signedUrl;
+      } catch (storageErr) {
+        console.error("[verify-recitation-from-audio] Storage save/sign failed:", storageErr);
+        return NextResponse.json(
+          { error: "音檔儲存或取得網址失敗，請檢查 Firebase Storage 與環境變數（FIREBASE_STORAGE_BUCKET 等）" },
+          { status: 500 }
+        );
+      }
     } else {
       const body = (await request.json()) as {
         weekId?: string;
@@ -188,16 +197,38 @@ export async function POST(request: Request) {
       };
     }
 
-    const [res] = await speech.recognize({
-      audio: { content: base64 },
-      config: config as Parameters<SpeechClient["recognize"]>[0]["config"],
-    });
-    const response = res as RecognizeResult;
-    const transcript =
-      response?.results
-        ?.map((r) => r.alternatives?.[0]?.transcript)
-        .filter(Boolean)
-        .join(" ") ?? "";
+    let transcript: string;
+    try {
+      const [recRes] = await speech.recognize({
+        audio: { content: base64 },
+        config: config as Parameters<SpeechClient["recognize"]>[0]["config"],
+      });
+      const response = recRes as RecognizeResult;
+      transcript =
+        response?.results
+          ?.map((r) => r.alternatives?.[0]?.transcript)
+          .filter(Boolean)
+          .join(" ") ?? "";
+    } catch (sttErr) {
+      console.error("[verify-recitation-from-audio] Speech-to-Text failed:", sttErr);
+      const sttMsg = (sttErr as Error)?.message ?? String(sttErr);
+      if (/quota|resource exhausted|deadline/i.test(sttMsg)) {
+        return NextResponse.json(
+          { error: "語音辨識服務忙碌或逾時，請稍後再試（音檔建議 1 分鐘內）" },
+          { status: 500 }
+        );
+      }
+      if (/invalid|encoding|sample|unsupported|unauthenticated|permission/i.test(sttMsg)) {
+        return NextResponse.json(
+          { error: "語音辨識設定或音檔格式有誤，請用「開始錄音」錄製 WebM 或聯絡管理員" },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json(
+        { error: `語音辨識失敗：${sttMsg.slice(0, 80)}${sttMsg.length > 80 ? "…" : ""}` },
+        { status: 500 }
+      );
+    }
 
     if (!transcript.trim()) {
       return NextResponse.json(
@@ -228,7 +259,7 @@ export async function POST(request: Request) {
       accuracy,
     });
   } catch (e) {
-    console.error("Verify from audio error:", e);
+    console.error("[verify-recitation-from-audio]", e);
     const err = e as { message?: string; details?: string | { message?: string }[] };
     const raw =
       err?.message ??
@@ -236,12 +267,14 @@ export async function POST(request: Request) {
       (e instanceof Error ? e.message : String(e));
     const msg = (raw ?? "").toLowerCase();
     let message = "音檔偵測失敗，請稍後再試";
-    if (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample") || msg.includes("unsupported")) {
+    if (msg.includes("storage") || msg.includes("bucket") || msg.includes("signed")) {
+      message = "音檔儲存或取得網址失敗，請檢查 Firebase Storage 與環境變數";
+    } else if (msg.includes("invalid") || msg.includes("encoding") || msg.includes("sample") || msg.includes("unsupported")) {
       message = "音檔格式不支援，請用「開始錄音」錄製 WebM";
     } else if (msg.includes("resource exhausted") || msg.includes("quota") || msg.includes("deadline")) {
       message = "語音辨識服務忙碌或逾時，請稍後再試（音檔建議 1 分鐘內）";
-    } else if (msg.includes("permission") || msg.includes("unauthenticated")) {
-      message = "伺服器語音辨識未設定完成，請聯絡管理員";
+    } else if (msg.includes("permission") || msg.includes("unauthenticated") || msg.includes("id-token")) {
+      message = "登入過期或伺服器設定有誤，請重新登入或聯絡管理員";
     } else if (raw && raw.length < 120) {
       message = `音檔偵測失敗：${raw}`;
     } else if (raw) {
