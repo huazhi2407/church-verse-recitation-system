@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb, adminStorage } from "@/lib/firebase-admin";
+import { adminAuth, adminDb, adminStorage, getStorageBucketName } from "@/lib/firebase-admin";
 import { verifyRecitation } from "@/lib/verifyRecitationLogic";
 import { convertWebmToLinear16 } from "@/lib/convertWebmToLinear16";
 import { SpeechClient } from "@google-cloud/speech";
@@ -93,11 +93,7 @@ export async function POST(request: Request) {
 
       // 存原始 webm 到 Storage（只存一份）
       try {
-        const projectId = process.env.FIREBASE_PROJECT_ID;
-        const bucketName =
-          process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
-          process.env.FIREBASE_STORAGE_BUCKET ||
-          (projectId ? `${projectId}.appspot.com` : "");
+        const bucketName = getStorageBucketName();
         if (!bucketName) {
           throw new Error("Missing bucket: set FIREBASE_STORAGE_BUCKET or NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET (or FIREBASE_PROJECT_ID for default)");
         }

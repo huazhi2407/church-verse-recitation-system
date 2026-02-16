@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb, adminStorage } from "@/lib/firebase-admin";
+import { adminAuth, adminDb, adminStorage, getStorageBucketName } from "@/lib/firebase-admin";
 
 /**
  * GET /api/admin/recordings?weekId=xxx
@@ -25,7 +25,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "請提供 weekId" }, { status: 400 });
     }
 
-    const bucket = adminStorage.bucket();
+    const bucketName = getStorageBucketName();
+    if (!bucketName) {
+      return NextResponse.json(
+        { error: "伺服器未設定 Storage bucket（FIREBASE_STORAGE_BUCKET 或 FIREBASE_PROJECT_ID）" },
+        { status: 500 }
+      );
+    }
+    const bucket = adminStorage.bucket(bucketName);
     const [files] = await bucket.getFiles({ prefix: "recordings/" });
 
     const list: { path: string; userId: string; weekId: string; name: string }[] = [];

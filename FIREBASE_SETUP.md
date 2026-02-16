@@ -38,7 +38,7 @@
 4. **部署到 Vercel 時**：在 Vercel 專案 → Settings → Environment Variables 新增：
    - `FIREBASE_STORAGE_BUCKET` 或 `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` = 上述 bucket 名稱（與前端 firebaseConfig 的 storageBucket 相同）
 
-若未設定，錄音上傳會出現「音檔儲存或取得網址失敗」。
+若未設定，錄音上傳會出現「音檔儲存或取得網址失敗」。若出現「音檔儲存失敗」或權限錯誤，請看 **`docs/STORAGE_CHECKLIST.md`**（Firebase / GCP / Vercel 檢查清單與服務帳號 Storage 權限）。
 
 ---
 
