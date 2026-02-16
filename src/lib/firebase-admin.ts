@@ -13,6 +13,15 @@ export function getStorageBucketName(): string {
   );
 }
 
+/** 404 時可嘗試的另一種 bucket 名稱（Firebase 有 .firebasestorage.app 與 .appspot.com 兩種格式） */
+export function getStorageBucketNameAlternate(bucketName: string): string | null {
+  const projectId = process.env.FIREBASE_PROJECT_ID || bucketName.replace(/\.(firebasestorage\.app|appspot\.com)$/, "");
+  if (!projectId) return null;
+  if (bucketName.endsWith(".firebasestorage.app")) return `${projectId}.appspot.com`;
+  if (bucketName.endsWith(".appspot.com")) return `${projectId}.firebasestorage.app`;
+  return null;
+}
+
 function getAdminApp(): App {
   if (getApps().length > 0) {
     return getApps()[0] as App;

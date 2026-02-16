@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb, adminStorage, getStorageBucketName } from "@/lib/firebase-admin";
+import { adminAuth, adminDb, adminStorage, getStorageBucketName, getStorageBucketNameAlternate } from "@/lib/firebase-admin";
 import { verifyRecitation } from "@/lib/verifyRecitationLogic";
 import { convertWebmToLinear16 } from "@/lib/convertWebmToLinear16";
 import { SpeechClient } from "@google-cloud/speech";
@@ -91,54 +91,77 @@ export async function POST(request: Request) {
         );
       }
 
-      // 存原始 webm 到 Storage（只存一份）
-      try {
-        const bucketName = getStorageBucketName();
-        if (!bucketName) {
-          throw new Error("Missing bucket: set FIREBASE_STORAGE_BUCKET or NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET (or FIREBASE_PROJECT_ID for default)");
-        }
-        const bucket = adminStorage.bucket(bucketName);
-        const path = `recordings/${userId}/${weekId}/rec-${Date.now()}.webm`;
-        const fileRef = bucket.file(path);
-        await fileRef.save(audioBuffer, {
-          contentType: "audio/webm",
-          metadata: { cacheControl: "public, max-age=31536000" },
-        });
-        try {
-          const [signedUrl] = await fileRef.getSignedUrl({
-            version: "v4",
-            action: "read",
-            expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
-          });
-          audioUrl = signedUrl;
-        } catch (signErr) {
-          console.error("[verify-recitation-from-audio] getSignedUrl failed:", signErr);
-          return NextResponse.json(
-            { error: "音檔已存但取得回放網址失敗，請確認服務帳號有 Storage 權限並在 Vercel 設定 FIREBASE_STORAGE_BUCKET" },
-            { status: 500 }
-          );
-        }
-      } catch (storageErr) {
-        const err = storageErr as { message?: string; code?: number; status?: number };
-        const msg = err?.message ?? String(storageErr);
-        const code = err?.code ?? err?.status;
-        console.error("[verify-recitation-from-audio] Storage save failed:", storageErr);
-        if (msg.includes("Missing bucket") || msg.includes("bucket")) {
-          return NextResponse.json(
-            { error: "請在 Vercel 環境變數設定 FIREBASE_STORAGE_BUCKET（或 FIREBASE_PROJECT_ID），值為 Firebase 主控台 → Storage 的 bucket 名稱" },
-            { status: 500 }
-          );
-        }
-        let hint = "請檢查 Firebase Storage 是否已啟用、環境變數與服務帳號 Storage 權限";
-        if (code === 403 || msg.includes("403") || msg.toLowerCase().includes("permission")) {
-          hint = "403 權限不足：請到 Google Cloud Console → IAM，為 firebase-adminsdk 服務帳號新增「Storage 物件管理員」角色";
-        } else if (code === 404 || msg.includes("404") || msg.toLowerCase().includes("not found")) {
-          hint = "404 bucket 不存在：請確認 FIREBASE_STORAGE_BUCKET 與 Firebase 主控台 Storage 的 bucket 名稱一致（例如 xxx.firebasestorage.app）";
-        } else if (code || msg) {
-          hint = `音檔儲存失敗（${code || msg.slice(0, 60)}）。${hint}`;
-        }
+      // 存原始 webm 到 Storage（只存一份）；404 時自動嘗試另一種 bucket 格式（.firebasestorage.app ⇄ .appspot.com）
+      const path = `recordings/${userId}/${weekId}/rec-${Date.now()}.webm`;
+      const saveOpts = { contentType: "audio/webm" as const, metadata: { cacheControl: "public, max-age=31536000" } };
+      let lastErr: unknown = null;
+      let bucketName = getStorageBucketName();
+      if (!bucketName) {
         return NextResponse.json(
-          { error: hint },
+          { error: "請在 Vercel 環境變數設定 FIREBASE_STORAGE_BUCKET（或 FIREBASE_PROJECT_ID），值為 Firebase 主控台 → Storage 的 bucket 名稱" },
+          { status: 500 }
+        );
+      }
+      const bucketsToTry = [bucketName];
+      const alternate = getStorageBucketNameAlternate(bucketName);
+      if (alternate && alternate !== bucketName) bucketsToTry.push(alternate);
+
+      for (const name of bucketsToTry) {
+        try {
+          const bucket = adminStorage.bucket(name);
+          const fileRef = bucket.file(path);
+          await fileRef.save(audioBuffer, saveOpts);
+          try {
+            const [signedUrl] = await fileRef.getSignedUrl({
+              version: "v4",
+              action: "read",
+              expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
+            });
+            audioUrl = signedUrl;
+            lastErr = null;
+            break;
+          } catch (signErr) {
+            console.error("[verify-recitation-from-audio] getSignedUrl failed:", signErr);
+            return NextResponse.json(
+              { error: "音檔已存但取得回放網址失敗，請確認服務帳號有 Storage 權限並在 Vercel 設定 FIREBASE_STORAGE_BUCKET" },
+              { status: 500 }
+            );
+          }
+        } catch (storageErr) {
+          const err = storageErr as { message?: string; code?: number; status?: number };
+          const code = err?.code ?? err?.status;
+          const is404 = code === 404 || (err?.message ?? "").toLowerCase().includes("404") || (err?.message ?? "").toLowerCase().includes("not found");
+          lastErr = storageErr;
+          if (is404 && bucketsToTry.indexOf(name) < bucketsToTry.length - 1) {
+            console.warn("[verify-recitation-from-audio] Bucket", name, "404, trying alternate");
+            continue;
+          }
+          const msg = err?.message ?? String(storageErr);
+          console.error("[verify-recitation-from-audio] Storage save failed:", storageErr);
+          if (msg.includes("Missing bucket") || msg.includes("bucket")) {
+            return NextResponse.json(
+              { error: "請在 Vercel 環境變數設定 FIREBASE_STORAGE_BUCKET（或 FIREBASE_PROJECT_ID），值為 Firebase 主控台 → Storage 的 bucket 名稱" },
+              { status: 500 }
+            );
+          }
+          let hint = "請檢查 Firebase Storage 是否已啟用、環境變數與服務帳號 Storage 權限";
+          if (code === 403 || msg.includes("403") || msg.toLowerCase().includes("permission")) {
+            hint = "403 權限不足：請到 Google Cloud Console → IAM，為 firebase-adminsdk 服務帳號新增「Storage 物件管理員」角色";
+          } else if (code === 404 || msg.includes("404") || msg.toLowerCase().includes("not found")) {
+            hint = "404 bucket 不存在：已嘗試 " + bucketsToTry.join(" 與 ") + "，請到 Google Cloud Console → Storage 查看實際的儲存區名稱並設為 FIREBASE_STORAGE_BUCKET";
+          } else if (code || msg) {
+            hint = `音檔儲存失敗（${code || msg.slice(0, 60)}）。${hint}`;
+          }
+          return NextResponse.json(
+            { error: hint },
+            { status: 500 }
+          );
+        }
+      }
+      if (lastErr) {
+        console.error("[verify-recitation-from-audio] Storage save failed after retries:", lastErr);
+        return NextResponse.json(
+          { error: "音檔儲存失敗，請檢查 Firebase Storage 是否已啟用與服務帳號權限" },
           { status: 500 }
         );
       }
