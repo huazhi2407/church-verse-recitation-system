@@ -102,66 +102,51 @@ export async function POST(request: Request) {
           { status: 500 }
         );
       }
-      const bucketsToTry = [bucketName];
+      let bucketsToTry = [bucketName];
       const alternate = getStorageBucketNameAlternate(bucketName);
       if (alternate && alternate !== bucketName) bucketsToTry.push(alternate);
 
-      for (const name of bucketsToTry) {
+      const trySaveToBucket = async (name: string): Promise<boolean> => {
         try {
           const bucket = adminStorage.bucket(name);
           const fileRef = bucket.file(path);
           await fileRef.save(audioBuffer, saveOpts);
-          try {
-            const [signedUrl] = await fileRef.getSignedUrl({
-              version: "v4",
-              action: "read",
-              expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
-            });
-            audioUrl = signedUrl;
-            lastErr = null;
-            break;
-          } catch (signErr) {
-            console.error("[verify-recitation-from-audio] getSignedUrl failed:", signErr);
-            return NextResponse.json(
-              { error: "音檔已存但取得回放網址失敗，請確認服務帳號有 Storage 權限並在 Vercel 設定 FIREBASE_STORAGE_BUCKET" },
-              { status: 500 }
-            );
-          }
-        } catch (storageErr) {
-          const err = storageErr as { message?: string; code?: number; status?: number };
-          const code = err?.code ?? err?.status;
-          const is404 = code === 404 || (err?.message ?? "").toLowerCase().includes("404") || (err?.message ?? "").toLowerCase().includes("not found");
-          lastErr = storageErr;
-          if (is404 && bucketsToTry.indexOf(name) < bucketsToTry.length - 1) {
-            console.warn("[verify-recitation-from-audio] Bucket", name, "404, trying alternate");
-            continue;
-          }
-          const msg = err?.message ?? String(storageErr);
-          console.error("[verify-recitation-from-audio] Storage save failed:", storageErr);
-          if (msg.includes("Missing bucket") || msg.includes("bucket")) {
-            return NextResponse.json(
-              { error: "請在 Vercel 環境變數設定 FIREBASE_STORAGE_BUCKET（或 FIREBASE_PROJECT_ID），值為 Firebase 主控台 → Storage 的 bucket 名稱" },
-              { status: 500 }
-            );
-          }
-          let hint = "請檢查 Firebase Storage 是否已啟用、環境變數與服務帳號 Storage 權限";
-          if (code === 403 || msg.includes("403") || msg.toLowerCase().includes("permission")) {
-            hint = "403 權限不足：請到 Google Cloud Console → IAM，為 firebase-adminsdk 服務帳號新增「Storage 物件管理員」角色";
-          } else if (code === 404 || msg.includes("404") || msg.toLowerCase().includes("not found")) {
-            hint = "404 bucket 不存在：已嘗試 " + bucketsToTry.join(" 與 ") + "，請到 Google Cloud Console → Storage 查看實際的儲存區名稱並設為 FIREBASE_STORAGE_BUCKET";
-          } else if (code || msg) {
-            hint = `音檔儲存失敗（${code || msg.slice(0, 60)}）。${hint}`;
-          }
-          return NextResponse.json(
-            { error: hint },
-            { status: 500 }
-          );
+          const [signedUrl] = await fileRef.getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
+          });
+          audioUrl = signedUrl;
+          return true;
+        } catch {
+          return false;
         }
+      };
+
+      for (const name of bucketsToTry) {
+        const ok = await trySaveToBucket(name);
+        if (ok) {
+          lastErr = null;
+          break;
+        }
+        if (bucketsToTry.indexOf(name) < bucketsToTry.length - 1) {
+          console.warn("[verify-recitation-from-audio] Bucket", name, "failed, trying next");
+          continue;
+        }
+        lastErr = true;
       }
-      if (lastErr) {
-        console.error("[verify-recitation-from-audio] Storage save failed after retries:", lastErr);
+
+      if (lastErr || !audioUrl) {
+        console.error("[verify-recitation-from-audio] Storage save failed after all retries");
         return NextResponse.json(
-          { error: "音檔儲存失敗，請檢查 Firebase Storage 是否已啟用與服務帳號權限" },
+          {
+            error:
+              "404 bucket 不存在（已嘗試 " +
+              bucketsToTry.join("、") +
+              "）。請到 Google Cloud Console → 選專案「" +
+              (process.env.FIREBASE_PROJECT_ID || "與 FIREBASE_PROJECT_ID 相同") +
+              "」→ Storage → 儲存區，從列表「複製」儲存區名稱（一字不差）貼到 Vercel 的 FIREBASE_STORAGE_BUCKET。並確認服務帳號有「Storage 物件管理員」權限。",
+          },
           { status: 500 }
         );
       }

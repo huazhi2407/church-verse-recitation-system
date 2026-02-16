@@ -72,14 +72,14 @@ Firebase 專案對應一個 GCP 專案，服務帳號權限在這裡設定。
 |------|----------|------|
 | 音檔儲存失敗 | Storage 未啟用、bucket 不存在 | Firebase Console → Storage → 開始使用 |
 | 音檔儲存失敗 | 403 權限不足 | GCP IAM 為服務帳號加上 Storage 角色（見上） |
-| 音檔儲存失敗 | bucket 名稱錯誤 | 確認 env 的 bucket 與 Firebase 專案設定 / Storage 頁面一致 |
+| 音檔儲存失敗（404） | bucket 名稱與 API 不符 | 到 **Google Cloud Console** → Storage → 儲存區，從列表「複製」儲存區名稱（一字不差）設為 FIREBASE_STORAGE_BUCKET |
 | 音檔儲存失敗 | 環境變數未生效 | Vercel 改完變數後要再 Deploy 一次 |
 | 取得回放網址失敗 | 簽章權限或金鑰問題 | 確認同一服務帳號有 Storage 讀取權限，且 FIREBASE_PRIVATE_KEY 正確 |
 
 ---
 
-## 四、如何確認 bucket 名稱
+## 四、如何確認 bucket 名稱（404 時必看）
 
-- **Firebase**：專案設定 → 一般 → 你的應用程式 → `storageBucket`。  
-- **GCP**：Cloud Console → Storage → 儲存區，列表中的名稱即 bucket 名稱。  
-- 預設多為：**`你的專案ID.appspot.com`**。
+- **後端 API 以 GCP 為準**：請到 **Google Cloud Console** → 左側 **Storage** → **儲存區**，畫面上列出的「儲存區名稱」才是後端要用的值，請**一字不差**複製到 `FIREBASE_STORAGE_BUCKET`。
+- Firebase 專案設定裡的 `storageBucket`（如 `xxx.firebasestorage.app`）有時與 GCP 列表顯示不同；若兩者都 404，以 GCP 儲存區列表為準。
+- 預設常見：`專案ID.appspot.com` 或 `專案ID.firebasestorage.app`。
